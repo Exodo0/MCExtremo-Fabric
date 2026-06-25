@@ -1,0 +1,15 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.tuservidor.mcextremo.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "PlayerManagerMixin",
+    "ServerPlayerEntityMixin",
+    "ZombieAttributesMixin"
+  ],
+  "client": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

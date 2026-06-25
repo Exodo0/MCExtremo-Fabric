@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "mcextremo",
+  "version": "${version}",
+  "name": "MCExtremo",
+  "description": "Sistema de vidas limitadas, PvP programado y zombies inteligentes para Fabric/Arclight",
+  "authors": ["TuServidor"],
+  "contact": {},
+  "license": "MIT",
+  "environment": "*",
+  "accessWidener": "mcextremo.accesswidener",
+  "entrypoints": {
+    "main": ["com.tuservidor.mcextremo.MCExtremo"],
+    "client": ["com.tuservidor.mcextremo.client.MCExtremoClient"]
+  },
+  "mixins": [
+    "mcextremo.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.9",
+    "minecraft": "~1.20.4",
+    "java": ">=17",
+    "fabric-api": "*",
+    "cloth-config": "*"
+  }
+}
