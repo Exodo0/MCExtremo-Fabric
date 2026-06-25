@@ -10,8 +10,8 @@
   "environment": "*",
   "accessWidener": "mcextremo.accesswidener",
   "entrypoints": {
-    "main": ["com.tuservidor.mcextremo.MCExtremo"],
-    "client": ["com.tuservidor.mcextremo.client.MCExtremoClient"]
+    "main": ["com.egologic.mcextremo.MCExtremo"],
+    "client": ["com.egologic.mcextremo.client.MCExtremoClient"]
   },
   "mixins": [
     "mcextremo.mixins.json"

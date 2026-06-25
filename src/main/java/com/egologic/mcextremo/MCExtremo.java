@@ -1,0 +1,151 @@
+package com.egologic.mcextremo;
+
+import com.egologic.mcextremo.command.ModCommands;
+import com.egologic.mcextremo.config.ModConfig;
+import com.egologic.mcextremo.item.ModItems;
+import com.egologic.mcextremo.listener.DeathListener;
+import com.egologic.mcextremo.listener.JoinListener;
+import com.egologic.mcextremo.listener.ClientRequirementListener;
+import com.egologic.mcextremo.listener.SkillTreeListener;
+import com.egologic.mcextremo.listener.ZombieGoalListener;
+import com.egologic.mcextremo.manager.*;
+import com.egologic.mcextremo.network.SkillTreeNetworking;
+import com.egologic.mcextremo.skilltree.SkillPassiveHandler;
+import com.egologic.mcextremo.skilltree.SkillTreeManager;
+import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.minecraft.entity.damage.DamageSource;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.server.network.ServerPlayerEntity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class MCExtremo implements ModInitializer {
+    public static final String MOD_ID = "mcextremo";
+    public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+
+    private static MCExtremo instance;
+    private LivesManager livesManager;
+    private PvPScheduler pvpScheduler;
+    private ScoreboardManager scoreboardManager;
+    private HardcoreManager hardcoreManager;
+    private ZombieManager zombieManager;
+    private DataManager dataManager;
+    private ZombieHordeManager zombieHordeManager;
+    private SkillTreeManager skillTreeManager;
+    private RewardManager rewardManager;
+    private ArmorUpgradeManager armorUpgradeManager;
+    private ReviveTrialManager reviveTrialManager;
+    private EventTrialManager eventTrialManager;
+
+    @Override
+    public void onInitialize() {
+        instance = this;
+
+        ModConfig.register();
+        ModItems.register();
+
+        dataManager = new DataManager(this);
+        livesManager = new LivesManager(this);
+        pvpScheduler = new PvPScheduler(this);
+        scoreboardManager = new ScoreboardManager(this);
+        hardcoreManager = new HardcoreManager(this);
+        zombieManager = new ZombieManager(this);
+        zombieHordeManager = new ZombieHordeManager(this);
+        rewardManager = new RewardManager(this);
+        armorUpgradeManager = new ArmorUpgradeManager(this);
+        reviveTrialManager = new ReviveTrialManager(this);
+        eventTrialManager = new EventTrialManager(this);
+
+        if (ModConfig.get().skillTree.activado) {
+            skillTreeManager = new SkillTreeManager(this);
+            skillTreeManager.load();
+        }
+
+        livesManager.load();
+        dataManager.load();
+        rewardManager.registerEvents();
+
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            if (!server.isDedicated()) {
+                LOGGER.warn("MCExtremo requiere servidor dedicado. La logica del mod queda desactivada en singleplayer.");
+                return;
+            }
+            dataManager.setServer(server);
+            hardcoreManager.apply(server);
+            if (ModConfig.get().pvpProgramado.activado) {
+                pvpScheduler.start(server);
+            }
+            LOGGER.info("MCExtremo habilitado. Vidas: " + livesManager.getDefaultLives());
+        });
+
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            if (!server.isDedicated()) return;
+            livesManager.tick(server);
+            reviveTrialManager.tick(server);
+            eventTrialManager.tick(server);
+            zombieManager.tick(server.getOverworld());
+            pvpScheduler.tick(server);
+            scoreboardManager.tick(server);
+            zombieHordeManager.tick(server.getOverworld());
+        });
+
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            livesManager.save();
+            dataManager.save();
+            if (skillTreeManager != null) {
+                skillTreeManager.save();
+            }
+        });
+
+        registerPvpCancellation();
+        SkillPassiveHandler.register();
+        SkillTreeNetworking.registerServer();
+
+        ClientRequirementListener.register();
+        DeathListener.register();
+        JoinListener.register();
+        ZombieGoalListener.register();
+        SkillTreeListener.register();
+        ModCommands.register();
+
+        LOGGER.info("MCExtremo initialized!");
+    }
+
+    private void registerPvpCancellation() {
+        ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, damageSource, amount) -> {
+            var attacker = damageSource.getAttacker();
+            var source = damageSource.getSource();
+            if (entity.getCommandTags().contains(EventTrialManager.MOB_TAG)
+                && ((attacker != null && attacker.getCommandTags().contains(EventTrialManager.MOB_TAG))
+                    || (source != null && source.getCommandTags().contains(EventTrialManager.MOB_TAG)))) {
+                return false;
+            }
+            if (entity instanceof ServerPlayerEntity victim) {
+                if (attacker instanceof ServerPlayerEntity && !pvpScheduler.isPvpEnabled()) {
+                    return false;
+                }
+            }
+            return true;
+        });
+    }
+
+    public static MCExtremo getInstance() {
+        return instance;
+    }
+
+    public LivesManager getLivesManager() { return livesManager; }
+    public PvPScheduler getPvpScheduler() { return pvpScheduler; }
+    public ScoreboardManager getScoreboardManager() { return scoreboardManager; }
+    public HardcoreManager getHardcoreManager() { return hardcoreManager; }
+    public ZombieManager getZombieManager() { return zombieManager; }
+    public DataManager getDataManager() { return dataManager; }
+    public ZombieHordeManager getZombieHordeManager() { return zombieHordeManager; }
+    public SkillTreeManager getSkillTreeManager() { return skillTreeManager; }
+    public RewardManager getRewardManager() { return rewardManager; }
+    public ArmorUpgradeManager getArmorUpgradeManager() { return armorUpgradeManager; }
+    public ReviveTrialManager getReviveTrialManager() { return reviveTrialManager; }
+    public EventTrialManager getEventTrialManager() { return eventTrialManager; }
+}
