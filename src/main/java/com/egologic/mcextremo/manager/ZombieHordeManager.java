@@ -155,6 +155,7 @@ public class ZombieHordeManager {
         }
 
         Iterator<Map.Entry<UUID, HordeEvent>> it = activeHordes.entrySet().iterator();
+        int activeZombiesTotal = 0;
 
         while (it.hasNext()) {
             Map.Entry<UUID, HordeEvent> entry = it.next();
@@ -170,7 +171,6 @@ public class ZombieHordeManager {
 
             List<ZombieEntity> alive = getAliveZombies(event);
             int aliveZombies = alive.size();
-            globalZombieCount = countActiveHordeZombies();
 
             if (event.ticksRemaining <= 0) {
                 rewardHorde(event, true);
@@ -185,6 +185,7 @@ public class ZombieHordeManager {
                 it.remove();
                 continue;
             }
+            activeZombiesTotal += aliveZombies;
 
             float progress = (float) aliveZombies / event.initialZombies;
             event.bossBar.setPercent(progress);
@@ -192,12 +193,16 @@ public class ZombieHordeManager {
                 "\u00A74\u2620 " + getHordeTierName(event.day) + " \u00A77- \u00A7f" + aliveZombies + "/" + event.initialZombies + " zombies"
             ));
 
+            boolean repositioned = false;
             for (ZombieEntity z : alive) {
                 prepareHordeZombie(world, z, event.player, false);
                 if (z.squaredDistanceTo(event.player) > LEASH_DISTANCE_SQ && world.getTime() % 40L == 0L) {
                     teleportNearPlayer(world, z, event.player);
-                    event.player.sendMessage(Text.literal("\u00A7e\u2731 \u00A77Un zombie de la horda fue reposicionado cerca."), true);
+                    repositioned = true;
                 }
+            }
+            if (repositioned) {
+                event.player.sendMessage(Text.literal("\u00A7e\u2731 \u00A77La horda fue reposicionada cerca."), true);
             }
 
             int glowThreshold = SkillPassiveHandler.hasSkill(event.player, Skill.CAZADOR_T3) ? 2 : 1;
@@ -215,6 +220,7 @@ public class ZombieHordeManager {
                 }
             }
         }
+        globalZombieCount = activeZombiesTotal;
     }
 
     private void endHorde(HordeEvent event) {
@@ -306,7 +312,27 @@ public class ZombieHordeManager {
                 return ground;
             }
         }
-        return playerPos;
+        return findFallbackTeleportPos(player);
+    }
+
+    private net.minecraft.util.math.BlockPos findFallbackTeleportPos(ServerPlayerEntity player) {
+        net.minecraft.util.math.BlockPos playerPos = player.getBlockPos();
+        net.minecraft.world.World world = player.getWorld();
+        for (int radius = 1; radius <= 4; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (dx == 0 && dz == 0) continue;
+                    if (Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
+                    net.minecraft.util.math.BlockPos candidate = playerPos.add(dx, 0, dz);
+                    if (world.getBlockState(candidate.down()).isSolidBlock(world, candidate.down()) &&
+                        world.getBlockState(candidate).isAir() &&
+                        world.getBlockState(candidate.up()).isAir()) {
+                        return candidate;
+                    }
+                }
+            }
+        }
+        return playerPos.add(0, 0, 2);
     }
 
     public void removePlayer(ServerPlayerEntity player) {
