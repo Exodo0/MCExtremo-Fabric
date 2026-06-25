@@ -10,11 +10,11 @@ out/
 *.iml
 .vscode/
 
-run/
-runs/
-config/
-logs/
-crash-reports/
+/run/
+/runs/
+/config/
+/logs/
+/crash-reports/
 
 *.jar
 !gradle/wrapper/gradle-wrapper.jar
