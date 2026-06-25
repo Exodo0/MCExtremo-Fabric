@@ -12,6 +12,7 @@ import com.egologic.mcextremo.manager.*;
 import com.egologic.mcextremo.network.SkillTreeNetworking;
 import com.egologic.mcextremo.skilltree.SkillPassiveHandler;
 import com.egologic.mcextremo.skilltree.SkillTreeManager;
+import com.egologic.mcextremo.util.UpdateChecker;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -39,6 +40,7 @@ public class MCExtremo implements ModInitializer {
     private ArmorUpgradeManager armorUpgradeManager;
     private ReviveTrialManager reviveTrialManager;
     private EventTrialManager eventTrialManager;
+    private UpdateChecker updateChecker;
 
     @Override
     public void onInitialize() {
@@ -58,6 +60,7 @@ public class MCExtremo implements ModInitializer {
         armorUpgradeManager = new ArmorUpgradeManager(this);
         reviveTrialManager = new ReviveTrialManager(this);
         eventTrialManager = new EventTrialManager(this);
+        updateChecker = new UpdateChecker();
 
         if (ModConfig.get().skillTree.activado) {
             skillTreeManager = new SkillTreeManager(this);
@@ -78,6 +81,13 @@ public class MCExtremo implements ModInitializer {
             if (ModConfig.get().pvpProgramado.activado) {
                 pvpScheduler.start(server);
             }
+            updateChecker.checkAsync(false).thenAccept(info -> {
+                if (info.updateAvailable()) {
+                    LOGGER.warn("MCExtremo v" + info.latestVersion() + " disponible. Descarga: " + info.downloadUrl());
+                } else if (!info.failed()) {
+                    LOGGER.info("MCExtremo actualizado. Version local: " + info.currentVersion());
+                }
+            });
             LOGGER.info("MCExtremo habilitado. Vidas: " + livesManager.getDefaultLives());
         });
 
@@ -148,4 +158,5 @@ public class MCExtremo implements ModInitializer {
     public ArmorUpgradeManager getArmorUpgradeManager() { return armorUpgradeManager; }
     public ReviveTrialManager getReviveTrialManager() { return reviveTrialManager; }
     public EventTrialManager getEventTrialManager() { return eventTrialManager; }
+    public UpdateChecker getUpdateChecker() { return updateChecker; }
 }

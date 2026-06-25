@@ -138,6 +138,10 @@ public class ModCommands {
                 .requires(s -> s.hasPermissionLevel(2))
                 .executes(ctx -> comandoReload(ctx.getSource()))
             )
+            .then(literal("update")
+                .requires(s -> s.hasPermissionLevel(2))
+                .executes(ctx -> comandoUpdate(ctx.getSource()))
+            )
             .then(literal("scoreboard")
                 .requires(s -> s.hasPermissionLevel(2))
                 .executes(ctx -> comandoScoreboard(ctx.getSource()))
@@ -252,6 +256,14 @@ public class ModCommands {
     private static int comandoReload(ServerCommandSource source) {
         ModConfig.reload();
         source.sendFeedback(() -> Text.literal("\u00A7aConfiguracion recargada."), true);
+        return 1;
+    }
+
+    private static int comandoUpdate(ServerCommandSource source) {
+        MCExtremo mod = MCExtremo.getInstance();
+        source.sendFeedback(() -> Text.literal("\u00A7eRevisando GitHub Releases..."), false);
+        mod.getUpdateChecker().checkAsync(true).thenAccept(info ->
+            source.getServer().execute(() -> mod.getUpdateChecker().sendStatus(source, info)));
         return 1;
     }
 
@@ -584,6 +596,7 @@ public class ModCommands {
         source.sendFeedback(() -> Text.literal("\u00A7e/mce dead \u00A77- List eliminated players"), false);
         source.sendFeedback(() -> Text.literal("\u00A7e/mce pvp <on|off> \u00A77- Toggle PvP"), false);
         source.sendFeedback(() -> Text.literal("\u00A7e/mce reload \u00A77- Reload config"), false);
+        source.sendFeedback(() -> Text.literal("\u00A7e/mce update \u00A77- Check latest GitHub release"), false);
         source.sendFeedback(() -> Text.literal("\u00A78All commands are now under /mce."), false);
         return 1;
     }

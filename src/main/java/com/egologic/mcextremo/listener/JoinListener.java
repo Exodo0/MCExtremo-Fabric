@@ -13,6 +13,7 @@ public class JoinListener {
             if (!mod.getLivesManager().handleJoin(player)) return;
             mod.getEventTrialManager().recoverInterruptedEvent(player);
             mod.getScoreboardManager().forceUpdateScoreboard(player);
+            mod.getUpdateChecker().notifyIfUpdateAvailable(player);
         });
 
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {

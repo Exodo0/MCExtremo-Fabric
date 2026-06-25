@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mcextremo",
   "version": "${version}",
-  "name": "MCExtremo",
+  "name": "MCExtremo v${version}",
   "description": "Sistema de vidas limitadas, PvP programado y zombies inteligentes para Fabric/Arclight",
   "authors": ["Egologic"],
   "contact": {},
