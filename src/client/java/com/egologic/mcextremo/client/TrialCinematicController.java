@@ -4,20 +4,15 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.entity.Entity;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
 public final class TrialCinematicController {
-    private static final float CAMERA_STRENGTH = 0.34f;
-    private static final float MAX_PITCH = 75.0f;
     private static final int FADE_TICKS = 16;
 
     private static BossIntro activeIntro;
     private static EventIntro activeEventIntro;
-    private static float guidedYaw;
-    private static float guidedPitch;
 
     private record BossIntro(int entityId, Vec3d fallbackPos, int totalTicks, int ticksRemaining, String title) {
         BossIntro tick() {
@@ -41,21 +36,11 @@ public final class TrialCinematicController {
 
     public static void startBossIntro(int entityId, Vec3d fallbackPos, int durationTicks, String title) {
         int ticks = Math.max(1, durationTicks);
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player != null) {
-            guidedYaw = client.player.getYaw();
-            guidedPitch = client.player.getPitch();
-        }
         activeIntro = new BossIntro(entityId, fallbackPos, ticks, ticks, title == null || title.isBlank() ? "El Coloso desciende" : title);
     }
 
     public static void startEventIntro(Vec3d center, int durationTicks) {
         int ticks = Math.max(40, durationTicks);
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player != null) {
-            guidedYaw = client.player.getYaw();
-            guidedPitch = client.player.getPitch();
-        }
         activeEventIntro = new EventIntro(center, ticks, ticks);
     }
 
@@ -69,7 +54,6 @@ public final class TrialCinematicController {
             if (client.player == null || activeEventIntro.ticksRemaining() <= 0) {
                 activeEventIntro = null;
             } else {
-                lookAtEventSky(client, activeEventIntro);
                 activeEventIntro = activeEventIntro.tick();
             }
         }
@@ -84,64 +68,7 @@ public final class TrialCinematicController {
             return;
         }
 
-        Vec3d target = getTarget(client, activeIntro);
-        lookAt(client, target, activeIntro);
         activeIntro = activeIntro.tick();
-    }
-
-    private static Vec3d getTarget(MinecraftClient client, BossIntro intro) {
-        Entity entity = client.world.getEntityById(intro.entityId());
-        if (entity != null && entity.isAlive()) {
-            return entity.getPos().add(0.0, entity.getHeight() * 0.75, 0.0);
-        }
-        return intro.fallbackPos();
-    }
-
-    private static void lookAt(MinecraftClient client, Vec3d target, BossIntro intro) {
-        Vec3d eye = client.player.getEyePos();
-        Vec3d delta = target.subtract(eye);
-        double horizontal = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
-        if (horizontal < 0.001) return;
-
-        float targetYaw = (float) (MathHelper.atan2(delta.z, delta.x) * 180.0F / Math.PI) - 90.0F;
-        float targetPitch = (float) (-(MathHelper.atan2(delta.y, horizontal) * 180.0F / Math.PI));
-        targetPitch = MathHelper.clamp(targetPitch, -MAX_PITCH, MAX_PITCH);
-
-        float progress = 1.0f - (intro.ticksRemaining() / (float) intro.totalTicks());
-        float strength = CAMERA_STRENGTH + Math.min(0.42f, progress * 0.42f);
-        guidedYaw += MathHelper.wrapDegrees(targetYaw - guidedYaw) * strength;
-        guidedPitch += (targetPitch - guidedPitch) * strength;
-        guidedPitch = MathHelper.clamp(guidedPitch, -MAX_PITCH, MAX_PITCH);
-
-        client.player.prevYaw = guidedYaw;
-        client.player.prevPitch = guidedPitch;
-        client.player.setYaw(guidedYaw);
-        client.player.setPitch(guidedPitch);
-        client.player.setHeadYaw(guidedYaw);
-        client.player.bodyYaw = guidedYaw;
-    }
-
-    private static void lookAtEventSky(MinecraftClient client, EventIntro intro) {
-        Vec3d target = intro.center().add(0.0, 10.0, 0.0);
-        Vec3d eye = client.player.getEyePos();
-        Vec3d delta = target.subtract(eye);
-        double horizontal = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
-        if (horizontal < 0.001) return;
-
-        float targetYaw = (float) (MathHelper.atan2(delta.z, delta.x) * 180.0F / Math.PI) - 90.0F;
-        float targetPitch = (float) (-(MathHelper.atan2(delta.y, horizontal) * 180.0F / Math.PI));
-        targetPitch = MathHelper.clamp(targetPitch, -34.0f, 8.0f);
-
-        guidedYaw += MathHelper.wrapDegrees(targetYaw - guidedYaw) * 0.45f;
-        guidedPitch += (targetPitch - guidedPitch) * 0.38f;
-        guidedPitch = MathHelper.clamp(guidedPitch, -34.0f, 8.0f);
-
-        client.player.prevYaw = guidedYaw;
-        client.player.prevPitch = guidedPitch;
-        client.player.setYaw(guidedYaw);
-        client.player.setPitch(guidedPitch);
-        client.player.setHeadYaw(guidedYaw);
-        client.player.bodyYaw = guidedYaw;
     }
 
     private static void renderHud(DrawContext context, float tickDelta) {

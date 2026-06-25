@@ -83,9 +83,9 @@ public class EventTrialManager {
         Set<UUID> participants = new HashSet<>();
         Set<UUID> mobs = new HashSet<>();
         Map<UUID, BlockPos> landingPositions = new HashMap<>();
-        Map<UUID, Vec3d> cameraPositions = new HashMap<>();
         Map<UUID, UUID> introAvatars = new HashMap<>();
         Set<UUID> landedPlayers = new HashSet<>();
+        UUID cameraEntityId;
         Phase phase = Phase.PREPARATION;
         int initialPlayers;
         int wave;
@@ -277,8 +277,12 @@ public class EventTrialManager {
         player.getHungerManager().setFoodLevel(20);
         player.getHungerManager().setSaturationLevel(10.0f);
         if (event.phase == Phase.INTRO) {
-            Vec3d cameraPos = event.cameraPositions.getOrDefault(player.getUuid(), getIntroCameraPosition(event.center, 0, 1));
-            prepareIntroViewer(player, getEventWorld(player.getServer()), cameraPos, event.center, ModConfig.get().eventTrial);
+            ServerWorld world = getEventWorld(player.getServer());
+            prepareIntroViewer(player, world, event.center, ModConfig.get().eventTrial);
+            Entity camera = event.cameraEntityId == null ? null : world.getEntity(event.cameraEntityId);
+            if (camera != null) {
+                player.setCameraEntity(camera);
+            }
         } else {
             teleportToArena(player, getEventWorld(player.getServer()), event.center);
         }
@@ -362,19 +366,25 @@ public class EventTrialManager {
         event.bossBar.setName(TextUtil.literal(config.introActivada ? "&5Event Trial &7- Entrada" : "&5Event Trial &7- Preparacion"));
         event.bossBar.setPercent(1.0f);
 
+        ArmorStandEntity camera = config.introActivada ? spawnCentralCamera(world, event.center) : null;
+        if (camera != null) {
+            event.cameraEntityId = camera.getUuid();
+        }
+
         for (int i = 0; i < players.size(); i++) {
             ServerPlayerEntity player = players.get(i);
             BlockPos landing = getLandingPosition(world, event.center, i, players.size());
-            Vec3d cameraPos = getIntroCameraPosition(event.center, i, players.size());
             event.participants.add(player.getUuid());
             event.landingPositions.put(player.getUuid(), landing);
-            event.cameraPositions.put(player.getUuid(), cameraPos);
             saveAndHideInventory(player);
             giveEventKit(player);
             mod.getDataManager().setTrialState(player.getUuid(), STATE_EVENT_TRIAL);
             player.changeGameMode(GameMode.SURVIVAL);
             if (config.introActivada) {
-                prepareIntroViewer(player, world, cameraPos, event.center, config);
+                prepareIntroViewer(player, world, event.center, config);
+                if (camera != null) {
+                    player.setCameraEntity(camera);
+                }
                 createIntroAvatar(world, event, player, landing, config);
                 TrialCinematicNetworking.sendEventIntro(player, Vec3d.ofCenter(event.center), config.introDuracionTicks);
             } else {
@@ -454,8 +464,6 @@ public class EventTrialManager {
             ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
             if (player == null) continue;
             BlockPos landing = event.landingPositions.getOrDefault(uuid, event.center.add(0, 2, 0));
-            Vec3d cameraPos = event.cameraPositions.getOrDefault(uuid, Vec3d.ofCenter(event.center).add(0.0, 8.0, 0.0));
-            prepareIntroViewer(player, world, cameraPos, event.center, config);
 
             double y = landing.getY() + 1.0 + height;
             tickIntroAvatar(world, event, uuid, landing, y);
@@ -481,24 +489,43 @@ public class EventTrialManager {
                 if (event.landedPlayers.add(uuid) && config.introCirculoFuego) {
                     spawnLandingFireCircle(world, landing);
                 }
+                player.setCameraEntity(player);
                 teleportToLanding(player, world, landing);
                 resetIntroPlayerState(player);
             }
             discardIntroActors(world, event);
+            discardIntroCamera(world, event);
             event.phase = Phase.PREPARATION;
             event.actionCooldown = Math.max(20, config.preparacionSegundos * 20);
             broadcast(server, "&5Event Trial &7- &eLa entrada termino. Preparate.");
         }
     }
 
-    private Vec3d getIntroCameraPosition(BlockPos center, int index, int totalPlayers) {
-        double spread = totalPlayers <= 1 ? 0.0 : (index - (totalPlayers - 1) / 2.0) * 1.4;
-        return Vec3d.ofCenter(center).add(spread, 15.0, -42.0);
+    private ArmorStandEntity spawnCentralCamera(ServerWorld world, BlockPos center) {
+        Vec3d pos = Vec3d.ofCenter(center).add(0.0, 2.5, 0.0);
+        ArmorStandEntity camera = new ArmorStandEntity(world, pos.x, pos.y, pos.z);
+        camera.setInvisible(true);
+        camera.setNoGravity(true);
+        camera.setInvulnerable(true);
+        setArmorStandMarker(camera);
+        camera.setCustomName(Text.literal("mcextremo_camera"));
+        camera.setCustomNameVisible(false);
+        camera.addCommandTag("mcextremo_event_camera");
+        camera.refreshPositionAndAngles(pos.x, pos.y, pos.z, 0.0f, -85.0f);
+        world.spawnEntity(camera);
+        return camera;
     }
 
-    private void prepareIntroViewer(ServerPlayerEntity player, ServerWorld world, Vec3d cameraPos, BlockPos center, ModConfig.EventTrial config) {
-        Vec3d target = Vec3d.ofCenter(center).add(0.0, 10.0, 0.0);
-        player.teleport(world, cameraPos.x, cameraPos.y, cameraPos.z, getLookYaw(cameraPos, target), getLookPitch(cameraPos, target));
+    private void setArmorStandMarker(ArmorStandEntity armorStand) {
+        NbtCompound nbt = new NbtCompound();
+        armorStand.writeNbt(nbt);
+        nbt.putBoolean("Marker", true);
+        armorStand.readNbt(nbt);
+    }
+
+    private void prepareIntroViewer(ServerPlayerEntity player, ServerWorld world, BlockPos center, ModConfig.EventTrial config) {
+        BlockPos safe = eventSafeIntroPosition(center);
+        player.teleport(world, safe.getX() + 0.5, safe.getY(), safe.getZ() + 0.5, player.getYaw(), player.getPitch());
         player.setVelocity(0.0, 0.0, 0.0);
         player.velocityModified = true;
         player.fallDistance = 0.0f;
@@ -513,15 +540,8 @@ public class EventTrialManager {
         player.addStatusEffect(new StatusEffectInstance(StatusEffects.INVISIBILITY, 12, 0, false, false));
     }
 
-    private float getLookYaw(Vec3d from, Vec3d to) {
-        Vec3d delta = to.subtract(from);
-        return (float) (Math.atan2(delta.z, delta.x) * 180.0 / Math.PI) - 90.0f;
-    }
-
-    private float getLookPitch(Vec3d from, Vec3d to) {
-        Vec3d delta = to.subtract(from);
-        double horizontal = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
-        return (float) (-(Math.atan2(delta.y, horizontal) * 180.0 / Math.PI));
+    private BlockPos eventSafeIntroPosition(BlockPos center) {
+        return center.add(0, 4, 0);
     }
 
     private void createIntroAvatar(ServerWorld world, EventTrial event, ServerPlayerEntity player, BlockPos landing, ModConfig.EventTrial config) {
@@ -572,6 +592,13 @@ public class EventTrialManager {
             if (entity != null) entity.discard();
         }
         event.introAvatars.clear();
+    }
+
+    private void discardIntroCamera(ServerWorld world, EventTrial event) {
+        if (event.cameraEntityId == null) return;
+        Entity camera = world.getEntity(event.cameraEntityId);
+        if (camera != null) camera.discard();
+        event.cameraEntityId = null;
     }
 
     private void spawnIntroBeam(ServerWorld world, BlockPos landing, double playerY) {
@@ -1497,6 +1524,7 @@ public class EventTrialManager {
             }
         }
         discardIntroActors(world, event);
+        discardIntroCamera(world, event);
         discardMobs(world, event.mobs);
         Box box = new Box(event.center).expand(ModConfig.get().eventTrial.radioArena + 20, 40, ModConfig.get().eventTrial.radioArena + 20);
         for (Entity entity : world.getEntitiesByClass(Entity.class, box, entity -> !(entity instanceof ServerPlayerEntity))) {

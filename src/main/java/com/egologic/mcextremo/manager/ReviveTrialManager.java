@@ -17,6 +17,7 @@ import net.minecraft.entity.boss.BossBar;
 import net.minecraft.entity.boss.ServerBossBar;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.entity.decoration.ArmorStandEntity;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.LightningEntity;
 import net.minecraft.entity.mob.EndermanEntity;
@@ -38,6 +39,7 @@ import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.GameMode;
 import net.minecraft.world.World;
 
@@ -63,6 +65,7 @@ public class ReviveTrialManager {
     private final MCExtremo mod;
     private final Map<UUID, Trial> activeTrials = new HashMap<>();
     private final Map<UUID, SavedInventory> savedInventories = new HashMap<>();
+    private final Map<UUID, UUID> pendingBossIntroCameras = new HashMap<>();
 
     private record Trial(
         UUID uuid,
@@ -81,6 +84,7 @@ public class ReviveTrialManager {
         boolean bossFinalMinionsTriggered,
         boolean bossRecovered,
         int bossIntroTicks,
+        UUID bossIntroCamera,
         boolean voluntary
     ) {
         Trial tick() {
@@ -90,25 +94,29 @@ public class ReviveTrialManager {
                 bossId, Math.max(0, bossMechanicCooldown - 1),
                 Math.max(0, lightningCooldown - 1),
                 bossEarlyMinionsTriggered, bossPhaseTwoTriggered, bossFinalMinionsTriggered, bossRecovered,
-                Math.max(0, bossIntroTicks - 1), voluntary
+                Math.max(0, bossIntroTicks - 1), bossIntroCamera, voluntary
             );
         }
 
         Trial nextWave(int nextWave, Set<UUID> mobs, UUID nextBossId) {
             int introTicks = nextBossId != null ? BOSS_INTRO_TICKS : 0;
-            return new Trial(uuid, bossBar, center, attempt, nextWave, WAVE_DELAY_TICKS, mobs, false, nextBossId, 12 * 20, 14 * 20, false, false, false, false, introTicks, voluntary);
+            return new Trial(uuid, bossBar, center, attempt, nextWave, WAVE_DELAY_TICKS, mobs, false, nextBossId, 12 * 20, 14 * 20, false, false, false, false, introTicks, bossIntroCamera, voluntary);
         }
 
         Trial startVictoryDelay(int cooldown) {
-            return new Trial(uuid, bossBar, center, attempt, wave, cooldown, new HashSet<>(), true, null, 0, 0, bossEarlyMinionsTriggered, bossPhaseTwoTriggered, bossFinalMinionsTriggered, bossRecovered, 0, voluntary);
+            return new Trial(uuid, bossBar, center, attempt, wave, cooldown, new HashSet<>(), true, null, 0, 0, bossEarlyMinionsTriggered, bossPhaseTwoTriggered, bossFinalMinionsTriggered, bossRecovered, 0, null, voluntary);
         }
 
         Trial withBossMechanics(UUID currentBossId, int cooldown, int currentLightningCooldown, boolean earlyMinionsTriggered, boolean phaseTwoTriggered, boolean finalMinionsTriggered, boolean recovered) {
-            return new Trial(uuid, bossBar, center, attempt, wave, actionCooldown, mobIds, victoryDelay, currentBossId, cooldown, currentLightningCooldown, earlyMinionsTriggered, phaseTwoTriggered, finalMinionsTriggered, recovered, bossIntroTicks, voluntary);
+            return new Trial(uuid, bossBar, center, attempt, wave, actionCooldown, mobIds, victoryDelay, currentBossId, cooldown, currentLightningCooldown, earlyMinionsTriggered, phaseTwoTriggered, finalMinionsTriggered, recovered, bossIntroTicks, bossIntroCamera, voluntary);
         }
 
         Trial withBossIntroTicks(int ticks) {
-            return new Trial(uuid, bossBar, center, attempt, wave, actionCooldown, mobIds, victoryDelay, bossId, bossMechanicCooldown, lightningCooldown, bossEarlyMinionsTriggered, bossPhaseTwoTriggered, bossFinalMinionsTriggered, bossRecovered, ticks, voluntary);
+            return new Trial(uuid, bossBar, center, attempt, wave, actionCooldown, mobIds, victoryDelay, bossId, bossMechanicCooldown, lightningCooldown, bossEarlyMinionsTriggered, bossPhaseTwoTriggered, bossFinalMinionsTriggered, bossRecovered, ticks, bossIntroCamera, voluntary);
+        }
+
+        Trial withBossCamera(UUID cameraId) {
+            return new Trial(uuid, bossBar, center, attempt, wave, actionCooldown, mobIds, victoryDelay, bossId, bossMechanicCooldown, lightningCooldown, bossEarlyMinionsTriggered, bossPhaseTwoTriggered, bossFinalMinionsTriggered, bossRecovered, bossIntroTicks, cameraId, voluntary);
         }
     }
 
@@ -230,6 +238,9 @@ public class ReviveTrialManager {
                     Set<UUID> mobs = spawnWave(player, trial.center(), nextWave);
                     UUID bossId = nextWave >= ModConfig.get().reviveTrial.oleadas && !mobs.isEmpty() ? mobs.iterator().next() : null;
                     trial = trial.nextWave(nextWave, mobs, bossId);
+                    if (bossId != null) {
+                        trial = trial.withBossCamera(pendingBossIntroCameras.remove(player.getUuid()));
+                    }
                     entry.setValue(trial);
                 } else {
                     updateBossBar(player, trial, 0);
@@ -359,7 +370,7 @@ public class ReviveTrialManager {
         bossBar.setPercent(1.0f);
 
         int preparation = Math.max(20, config.preparacionSegundos * 20);
-        activeTrials.put(player.getUuid(), new Trial(player.getUuid(), bossBar, center, attempt, 0, preparation, new HashSet<>(), false, null, 0, 0, false, false, false, false, 0, voluntary));
+        activeTrials.put(player.getUuid(), new Trial(player.getUuid(), bossBar, center, attempt, 0, preparation, new HashSet<>(), false, null, 0, 0, false, false, false, false, 0, null, voluntary));
         if (voluntary) {
             player.sendMessage(TextUtil.literal("&5Has iniciado una prueba voluntaria. &eSobrevive para recuperar una vida."), false);
             player.sendMessage(TextUtil.literal("&7Cooldown: &e" + config.trialVoluntarioCooldownMinutos + " minuto(s)&7."), false);
@@ -456,6 +467,7 @@ public class ReviveTrialManager {
         int amount = getWaveSize(wave);
         Set<UUID> mobs = new HashSet<>();
         spawnWaveStartEffects(world, center, wave);
+        boolean bossCameraCreated = false;
         if (wave >= ModConfig.get().reviveTrial.oleadas) {
             giveBossWaveUpgrade(player);
             player.sendMessage(TextUtil.literal("&5Oleada final &7- &dEl Coloso del Vacio ha despertado"), false);
@@ -488,6 +500,12 @@ public class ReviveTrialManager {
                 zombie.setAiDisabled(true);
                 zombie.setVelocity(0.0, -0.25, 0.0);
                 zombie.velocityModified = true;
+                if (!bossCameraCreated) {
+                    ArmorStandEntity camera = spawnBossCamera(world, center);
+                    player.setCameraEntity(camera);
+                    pendingBossIntroCameras.put(player.getUuid(), camera.getUuid());
+                    bossCameraCreated = true;
+                }
                 TrialCinematicNetworking.sendBossIntro(player, zombie.getId(), zombie.getPos().add(0.0, zombie.getHeight() * 0.75, 0.0), BOSS_INTRO_TICKS, "El Coloso del Vacio desciende");
             }
             mobs.add(zombie.getUuid());
@@ -720,10 +738,11 @@ public class ReviveTrialManager {
 
         boss.setAiDisabled(false);
         boss.setTarget(player);
+        restoreBossCamera(world, player, trial);
         unlockPlayerAfterBossIntro(player);
         spawnBossImpactEffects(world, boss.getBlockPos(), trial.center());
         player.sendMessage(TextUtil.literal("&4El Coloso del Vacio ha descendido."), false);
-        return trial.withBossIntroTicks(0);
+        return trial.withBossIntroTicks(0).withBossCamera(null);
     }
 
     private void lockPlayerForBossIntro(ServerPlayerEntity player) {
@@ -731,14 +750,52 @@ public class ReviveTrialManager {
         player.velocityModified = true;
         player.fallDistance = 0.0f;
         player.setInvulnerable(true);
-        player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 10, 10, false, false));
-        player.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, 10, 4, false, false));
+        player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 30, 10, false, false));
+        player.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, 30, 4, false, false));
     }
 
     private void unlockPlayerAfterBossIntro(ServerPlayerEntity player) {
+        if (player.getCameraEntity() != player) {
+            player.setCameraEntity(player);
+        }
         player.setInvulnerable(false);
         player.fallDistance = 0.0f;
         player.removeStatusEffect(StatusEffects.SLOWNESS);
+    }
+
+    private ArmorStandEntity spawnBossCamera(ServerWorld world, BlockPos center) {
+        Vec3d pos = Vec3d.ofCenter(center).add(0.0, 1.5, 0.0);
+        ArmorStandEntity camera = new ArmorStandEntity(world, pos.x, pos.y, pos.z);
+        camera.setInvisible(true);
+        camera.setNoGravity(true);
+        camera.setInvulnerable(true);
+        setArmorStandMarker(camera);
+        camera.setCustomName(Text.literal("mcextremo_boss_camera"));
+        camera.setCustomNameVisible(false);
+        camera.addCommandTag("mcextremo_boss_camera");
+        camera.refreshPositionAndAngles(pos.x, pos.y, pos.z, 0.0f, -70.0f);
+        world.spawnEntity(camera);
+        return camera;
+    }
+
+    private void setArmorStandMarker(ArmorStandEntity armorStand) {
+        NbtCompound nbt = new NbtCompound();
+        armorStand.writeNbt(nbt);
+        nbt.putBoolean("Marker", true);
+        armorStand.readNbt(nbt);
+    }
+
+    private void restoreBossCamera(ServerWorld world, ServerPlayerEntity player, Trial trial) {
+        if (player.getCameraEntity() != player) {
+            player.setCameraEntity(player);
+        }
+        discardBossCamera(world, trial);
+    }
+
+    private void discardBossCamera(ServerWorld world, Trial trial) {
+        if (trial.bossIntroCamera() == null) return;
+        Entity camera = world.getEntity(trial.bossIntroCamera());
+        if (camera != null) camera.discard();
     }
 
     private void healBossForStageTwo(ZombieEntity boss) {
@@ -949,6 +1006,13 @@ public class ReviveTrialManager {
     private void cleanupTrial(MinecraftServer server, Trial trial) {
         trial.bossBar().clearPlayers();
         ServerWorld world = getTrialWorld(server);
+        pendingBossIntroCameras.remove(trial.uuid());
+        ServerPlayerEntity player = server.getPlayerManager().getPlayer(trial.uuid());
+        if (player != null) {
+            restoreBossCamera(world, player, trial);
+        } else {
+            discardBossCamera(world, trial);
+        }
         discardMobs(world, trial.mobIds());
         cleanupArenaEntities(world, trial.center(), ModConfig.get().reviveTrial.radioArena);
         if (ModConfig.get().reviveTrial.limpiarIslaAlTerminar) {
