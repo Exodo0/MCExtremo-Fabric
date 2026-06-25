@@ -20,9 +20,9 @@ public final class TrialCinematicController {
         }
     }
 
-    private record EventIntro(Vec3d center, int totalTicks, int ticksRemaining) {
+    private record EventIntro(Vec3d center, int totalTicks, int ticksRemaining, String title, String subtitle) {
         EventIntro tick() {
-            return new EventIntro(center, totalTicks, ticksRemaining - 1);
+            return new EventIntro(center, totalTicks, ticksRemaining - 1, title, subtitle);
         }
     }
 
@@ -39,9 +39,11 @@ public final class TrialCinematicController {
         activeIntro = new BossIntro(entityId, fallbackPos, ticks, ticks, title == null || title.isBlank() ? "El Coloso desciende" : title);
     }
 
-    public static void startEventIntro(Vec3d center, int durationTicks) {
+    public static void startEventIntro(Vec3d center, int durationTicks, String title, String subtitle) {
         int ticks = Math.max(40, durationTicks);
-        activeEventIntro = new EventIntro(center, ticks, ticks);
+        String safeTitle = title == null || title.isBlank() ? "Entrando al Event Trial" : title;
+        String safeSubtitle = subtitle == null || subtitle.isBlank() ? "La arena te reclama" : subtitle;
+        activeEventIntro = new EventIntro(center, ticks, ticks, safeTitle, safeSubtitle);
     }
 
     public static void stopAll() {
@@ -111,8 +113,8 @@ public final class TrialCinematicController {
             int textAlpha = MathHelper.clamp((int) (alpha * 255.0f), 0, 255);
             int titleColor = (textAlpha << 24) | 0xF5D67B;
             int subColor = (textAlpha << 24) | 0xD9B5FF;
-            context.drawCenteredTextWithShadow(client.textRenderer, Text.literal("Entrando al Event Trial"), width / 2, height / 2 + 22, titleColor);
-            context.drawCenteredTextWithShadow(client.textRenderer, Text.literal("La arena te reclama"), width / 2, height / 2 + 36, subColor);
+            context.drawCenteredTextWithShadow(client.textRenderer, Text.literal(activeEventIntro.title()), width / 2, height / 2 + 22, titleColor);
+            context.drawCenteredTextWithShadow(client.textRenderer, Text.literal(activeEventIntro.subtitle()), width / 2, height / 2 + 36, subColor);
         }
     }
 

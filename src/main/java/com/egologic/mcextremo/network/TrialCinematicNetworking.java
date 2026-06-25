@@ -29,7 +29,7 @@ public final class TrialCinematicNetworking {
         ServerPlayNetworking.send(player, BOSS_INTRO, buf);
     }
 
-    public static void sendEventIntro(ServerPlayerEntity player, Vec3d center, int durationTicks) {
+    public static void sendEventIntro(ServerPlayerEntity player, Vec3d center, int durationTicks, String title, String subtitle) {
         if (!ServerPlayNetworking.canSend(player, EVENT_INTRO)) return;
 
         PacketByteBuf buf = PacketByteBufs.create();
@@ -37,6 +37,8 @@ public final class TrialCinematicNetworking {
         buf.writeDouble(center.y);
         buf.writeDouble(center.z);
         buf.writeInt(durationTicks);
+        buf.writeString(title);
+        buf.writeString(subtitle);
         ServerPlayNetworking.send(player, EVENT_INTRO, buf);
     }
 

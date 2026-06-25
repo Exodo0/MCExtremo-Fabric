@@ -21,7 +21,9 @@ public final class TrialCinematicClientNetworking {
             (client, handler, buf, responseSender) -> {
                 Vec3d center = new Vec3d(buf.readDouble(), buf.readDouble(), buf.readDouble());
                 int durationTicks = buf.readInt();
-                client.execute(() -> TrialCinematicController.startEventIntro(center, durationTicks));
+                String title = buf.readString();
+                String subtitle = buf.readString();
+                client.execute(() -> TrialCinematicController.startEventIntro(center, durationTicks, title, subtitle));
             });
         ClientPlayNetworking.registerGlobalReceiver(TrialCinematicNetworking.STOP,
             (client, handler, buf, responseSender) ->

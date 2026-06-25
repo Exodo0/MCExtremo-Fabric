@@ -99,7 +99,7 @@ public class ReviveTrialManager {
 
         Trial nextWave(int nextWave, Set<UUID> mobs, UUID nextBossId) {
             int introTicks = nextBossId != null ? BOSS_INTRO_TICKS : 0;
-            return new Trial(uuid, bossBar, center, attempt, nextWave, WAVE_DELAY_TICKS, mobs, false, nextBossId, 12 * 20, 14 * 20, false, false, false, false, introTicks, bossIntroCamera, voluntary);
+            return new Trial(uuid, bossBar, center, attempt, nextWave, WAVE_DELAY_TICKS, mobs, false, nextBossId, 12 * 20, 14 * 20, false, false, false, false, introTicks, null, voluntary);
         }
 
         Trial startVictoryDelay(int cooldown) {

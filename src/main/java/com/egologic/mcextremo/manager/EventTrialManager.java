@@ -85,6 +85,7 @@ public class EventTrialManager {
         Map<UUID, BlockPos> landingPositions = new HashMap<>();
         Map<UUID, UUID> introAvatars = new HashMap<>();
         Set<UUID> landedPlayers = new HashSet<>();
+        Set<UUID> impactPrimedPlayers = new HashSet<>();
         UUID cameraEntityId;
         Phase phase = Phase.PREPARATION;
         int initialPlayers;
@@ -386,7 +387,8 @@ public class EventTrialManager {
                     player.setCameraEntity(camera);
                 }
                 createIntroAvatar(world, event, player, landing, config);
-                TrialCinematicNetworking.sendEventIntro(player, Vec3d.ofCenter(event.center), config.introDuracionTicks);
+                TrialCinematicNetworking.sendEventIntro(player, Vec3d.ofCenter(event.center), config.introDuracionTicks,
+                    "Entrando al Event Trial", "La arena te reclama");
             } else {
                 teleportToLanding(player, world, landing);
             }
@@ -471,6 +473,10 @@ public class EventTrialManager {
 
             if (config.introHazLuz && world.getTime() % 2L == 0L) {
                 spawnIntroBeam(world, landing, y);
+            }
+
+            if (height <= 2.0 && event.impactPrimedPlayers.add(uuid)) {
+                spawnLandingShockwave(world, landing);
             }
 
             if (height <= 0.6 && event.landedPlayers.add(uuid)) {
@@ -606,12 +612,33 @@ public class EventTrialManager {
         double z = landing.getZ() + 0.5;
         double top = Math.max(playerY + 1.5, landing.getY() + 2.0);
         for (double y = landing.getY() + 0.3; y <= top; y += 1.35) {
-            world.spawnParticles(ParticleTypes.END_ROD, x, y, z, 1, 0.04, 0.08, 0.04, 0.004);
+            double distanceToTop = Math.max(0.0, top - y);
+            double normalized = Math.max(0.0, 1.0 - distanceToTop / Math.max(1.0, top - landing.getY()));
+            int count = 1 + (int) Math.round(normalized * 3.0);
+            double spread = 0.04 + normalized * 0.12;
+            world.spawnParticles(ParticleTypes.END_ROD, x, y, z, count, spread, 0.08, spread, 0.004 + normalized * 0.006);
             if (((int) y) % 4 == 0) {
-                world.spawnParticles(ParticleTypes.ELECTRIC_SPARK, x, y, z, 2, 0.16, 0.12, 0.16, 0.02);
+                world.spawnParticles(ParticleTypes.ELECTRIC_SPARK, x, y, z, 2 + (int) Math.round(normalized * 2.0), 0.16, 0.12, 0.16, 0.02);
             }
         }
-        world.spawnParticles(ParticleTypes.REVERSE_PORTAL, x, top, z, 8, 0.35, 0.2, 0.35, 0.03);
+        int crown = world.getTime() % 10L == 0L ? 18 : 8;
+        world.spawnParticles(ParticleTypes.REVERSE_PORTAL, x, top, z, crown, 0.35, 0.2, 0.35, 0.03);
+    }
+
+    private void spawnLandingShockwave(ServerWorld world, BlockPos landing) {
+        double x = landing.getX() + 0.5;
+        double y = landing.getY() + 1.08;
+        double z = landing.getZ() + 0.5;
+        for (int i = 0; i < 48; i++) {
+            double angle = Math.PI * 2.0 * i / 48.0;
+            double radius = 1.2 + (i % 3) * 0.65;
+            double px = x + Math.cos(angle) * radius;
+            double pz = z + Math.sin(angle) * radius;
+            world.spawnParticles(ParticleTypes.CLOUD, px, y, pz, 1, 0.03, 0.02, 0.03, 0.02);
+            world.spawnParticles(ParticleTypes.ELECTRIC_SPARK, px, y + 0.1, pz, 1, 0.02, 0.02, 0.02, 0.03);
+        }
+        world.spawnParticles(ParticleTypes.FLASH, x, y + 0.3, z, 1, 0.0, 0.0, 0.0, 0.0);
+        world.playSound(null, landing, SoundEvents.ENTITY_GENERIC_EXPLODE, SoundCategory.PLAYERS, 0.35f, 1.6f);
     }
 
     private void spawnLandingFireCircle(ServerWorld world, BlockPos landing) {
