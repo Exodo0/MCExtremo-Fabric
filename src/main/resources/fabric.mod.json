@@ -4,7 +4,7 @@
   "version": "${version}",
   "name": "MCExtremo",
   "description": "Sistema de vidas limitadas, PvP programado y zombies inteligentes para Fabric/Arclight",
-  "authors": ["TuServidor"],
+  "authors": ["Egologic"],
   "contact": {},
   "license": "MIT",
   "environment": "*",

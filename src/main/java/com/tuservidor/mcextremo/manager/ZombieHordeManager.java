@@ -84,6 +84,7 @@ public class ZombieHordeManager {
         int hordeSize = getHordeSize(day);
         if (hordeSize <= 0) return;
 
+        globalZombieCount = countActiveHordeZombies();
         if (globalZombieCount >= config().maxGlobal) return;
 
         int radio = Math.min(config().radioMaximo, config().radioActivacion + day);
@@ -100,7 +101,9 @@ public class ZombieHordeManager {
 
         if (nearby.isEmpty()) return;
 
-        int count = Math.min(nearby.size(), hordeSize);
+        int availableSlots = Math.max(0, config().maxGlobal - globalZombieCount);
+        int count = Math.min(Math.min(nearby.size(), hordeSize), availableSlots);
+        if (count <= 0) return;
         List<ZombieEntity> hordeZombies = new ArrayList<>(nearby.subList(0, count));
 
         HordeTier tier = getTier(day);
@@ -111,8 +114,6 @@ public class ZombieHordeManager {
                 z.setTarget(player);
             }
         }
-
-        globalZombieCount += count;
 
         ServerBossBar bossBar = new ServerBossBar(
             Text.literal("\u00A74\u2620 " + tier.name() + " \u00A77- \u00A7f" + count + " zombies"),
@@ -125,6 +126,7 @@ public class ZombieHordeManager {
         int duration = tier.duration() * 20;
         HordeEvent event = new HordeEvent(player, bossBar, hordeZombies, count, duration, day);
         activeHordes.put(player.getUuid(), event);
+        globalZombieCount = countActiveHordeZombies();
         hordeCooldowns.put(player.getUuid(), 0);
 
         player.sendMessage(Text.literal("\u00A74\u2620 \u00A7c\u00A7l" + tier.name() + " ACTIVADA! \u00A77" + count + " zombies se dirigen hacia ti."), true);
@@ -156,15 +158,9 @@ public class ZombieHordeManager {
                 continue;
             }
 
-            int aliveZombies = 0;
-            for (ZombieEntity z : event.zombies) {
-                if (z.isAlive() && !z.isRemoved()) {
-                    aliveZombies++;
-                }
-            }
-
-            globalZombieCount = Math.max(0, globalZombieCount - (event.totalZombies - aliveZombies));
-            event.totalZombies = aliveZombies;
+            List<ZombieEntity> alive = getAliveZombies(event);
+            int aliveZombies = alive.size();
+            globalZombieCount = countActiveHordeZombies();
 
             if (aliveZombies == 0) {
                 int exp = getHordeExpReward(event.day);
@@ -190,25 +186,23 @@ public class ZombieHordeManager {
                 "\u00A74\u2620 " + getHordeTierName(event.day) + " \u00A77- \u00A7f" + aliveZombies + "/" + event.initialZombies + " zombies"
             ));
 
-            for (ZombieEntity z : event.zombies) {
-                if (z.isAlive() && !z.isRemoved() && z.getTarget() == null) {
+            for (ZombieEntity z : alive) {
+                if (z.getTarget() == null) {
                     z.setTarget(event.player);
                 }
             }
 
             int glowThreshold = SkillPassiveHandler.hasSkill(event.player, Skill.CAZADOR_T3) ? 2 : 1;
             if (aliveZombies <= glowThreshold) {
-                for (ZombieEntity z : event.zombies) {
-                    if (z.isAlive() && !z.isRemoved()) {
-                        z.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
-                            net.minecraft.entity.effect.StatusEffects.GLOWING, 60, 0, false, true), event.player);
+                for (ZombieEntity z : alive) {
+                    z.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
+                        net.minecraft.entity.effect.StatusEffects.GLOWING, 60, 0, false, true), event.player);
 
-                        double dist = z.squaredDistanceTo(event.player);
-                        if (dist > 400.0) {
-                            net.minecraft.util.math.BlockPos tpPos = findTeleportPos(event.player);
-                            z.teleport(tpPos.getX() + 0.5, tpPos.getY(), tpPos.getZ() + 0.5);
-                            event.player.sendMessage(Text.literal("\u00A7e\u2731 \u00A77Ultimo zombie teletransportado cerca!"), true);
-                        }
+                    double dist = z.squaredDistanceTo(event.player);
+                    if (dist > 400.0) {
+                        net.minecraft.util.math.BlockPos tpPos = findTeleportPos(event.player);
+                        z.teleport(tpPos.getX() + 0.5, tpPos.getY(), tpPos.getZ() + 0.5);
+                        event.player.sendMessage(Text.literal("\u00A7e\u2731 \u00A77Ultimo zombie teletransportado cerca!"), true);
                     }
                 }
             }
@@ -216,13 +210,33 @@ public class ZombieHordeManager {
     }
 
     private void endHorde(HordeEvent event) {
-        int aliveCount = 0;
-        for (ZombieEntity z : event.zombies) {
-            if (z.isAlive() && !z.isRemoved()) aliveCount++;
-        }
-        globalZombieCount = Math.max(0, globalZombieCount - aliveCount);
+        event.zombieIds.clear();
+        globalZombieCount = countActiveHordeZombies();
         event.bossBar.clearPlayers();
         event.bossBar.setVisible(false);
+    }
+
+    private List<ZombieEntity> getAliveZombies(HordeEvent event) {
+        ServerWorld world = (ServerWorld) event.player.getWorld();
+        List<ZombieEntity> alive = new ArrayList<>();
+        Iterator<UUID> iterator = event.zombieIds.iterator();
+        while (iterator.hasNext()) {
+            UUID uuid = iterator.next();
+            if (world.getEntity(uuid) instanceof ZombieEntity zombie && zombie.isAlive() && !zombie.isRemoved()) {
+                alive.add(zombie);
+            } else {
+                iterator.remove();
+            }
+        }
+        return alive;
+    }
+
+    private int countActiveHordeZombies() {
+        int count = 0;
+        for (HordeEvent event : activeHordes.values()) {
+            count += getAliveZombies(event).size();
+        }
+        return count;
     }
 
     private net.minecraft.util.math.BlockPos findTeleportPos(ServerPlayerEntity player) {
@@ -256,18 +270,19 @@ public class ZombieHordeManager {
     private static class HordeEvent {
         final ServerPlayerEntity player;
         final ServerBossBar bossBar;
-        final List<ZombieEntity> zombies;
+        final Set<UUID> zombieIds;
         final int initialZombies;
         final int day;
-        int totalZombies;
         int ticksRemaining;
 
         HordeEvent(ServerPlayerEntity player, ServerBossBar bossBar, List<ZombieEntity> zombies, int initialZombies, int duration, int day) {
             this.player = player;
             this.bossBar = bossBar;
-            this.zombies = new ArrayList<>(zombies);
+            this.zombieIds = new HashSet<>();
+            for (ZombieEntity zombie : zombies) {
+                this.zombieIds.add(zombie.getUuid());
+            }
             this.initialZombies = initialZombies;
-            this.totalZombies = initialZombies;
             this.ticksRemaining = duration;
             this.day = day;
         }

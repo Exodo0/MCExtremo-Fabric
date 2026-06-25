@@ -17,6 +17,7 @@ import java.io.ByteArrayOutputStream;
 import java.lang.reflect.Type;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -171,7 +172,13 @@ public class DataManager {
             data.put("hardcoreConfigured", hardcoreConfigured);
             data.put("realDay", realDay);
 
-            Files.writeString(dataFile, gson.toJson(data));
+            Path tmpFile = dataFile.resolveSibling(dataFile.getFileName() + ".tmp");
+            Files.writeString(tmpFile, gson.toJson(data));
+            try {
+                Files.move(tmpFile, dataFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (Exception atomicMoveError) {
+                Files.move(tmpFile, dataFile, StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (Exception e) {
             MCExtremo.LOGGER.error("Error guardando datos", e);
         }

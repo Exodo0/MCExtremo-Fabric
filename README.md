@@ -30,8 +30,9 @@ Alias limpio para jugadores y admins:
 - `/mce pvp <on|off>`: fuerza PvP.
 - `/mce reload`: recarga config.
 
-Herramientas avanzadas y debug quedan en `/mcextremo`, incluyendo `config`,
-`revivearena`, `trial`, `saltardias`, `reducirdias`, `spawnzombie` y `zombieinfo`.
+Herramientas avanzadas y debug tambien quedan bajo `/mce`, incluyendo `config`,
+`revivearena`, `trial`, `event`, `skipdays`, `reducedays`, `spawnzombie` y
+`zombieinfo`. El comando historico `/mcextremo` ya no se registra.
 
 ## Sistemas principales
 
@@ -78,6 +79,8 @@ Si los jugadores se vuelven demasiado fuertes:
 ## Notas tecnicas
 
 - El trial persiste el inventario original para sobrevivir reinicios durante la prueba.
+- Los datos se escriben primero a `data.json.tmp` y luego se reemplazan
+  atomicamente para reducir riesgo de corrupcion por crash durante guardado.
 - El scoreboard evita recrear el objetivo completo cada segundo para reducir flicker.
 - La IA constructora usa cooldowns de repath para evitar trabajo excesivo por tick.
 - Para Arclight 1.20.4, prueben siempre con sus plugins reales de proteccion/claims.
