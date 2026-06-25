@@ -820,6 +820,9 @@ public class EventTrialManager {
             startFuryPhase(server, world, event, boss);
         } else {
             targetNearestParticipant(spider);
+            if (world.getTime() % 200L == 0L) {
+                spider.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 20 * 60 * 5, 0, false, true));
+            }
         }
     }
 
