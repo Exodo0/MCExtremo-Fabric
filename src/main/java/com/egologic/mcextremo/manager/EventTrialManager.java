@@ -69,72 +69,8 @@ public class EventTrialManager {
     private final MCExtremo mod;
     private EventTrial activeEvent;
 
-    private enum Phase {
-        GENERATING,
-        INTRO,
-        PREPARATION,
-        COMBAT,
-        VICTORY
-    }
-
-    private static class EventTrial {
-        ServerBossBar bossBar;
-        BlockPos center;
-        ArenaBuildTask arenaBuild;
-        Set<UUID> pendingPlayers = new HashSet<>();
-        Set<UUID> participants = new HashSet<>();
-        Set<UUID> mobs = new HashSet<>();
-        Map<UUID, BlockPos> landingPositions = new HashMap<>();
-        Map<UUID, UUID> introAvatars = new HashMap<>();
-        Set<UUID> landedPlayers = new HashSet<>();
-        Set<UUID> impactPrimedPlayers = new HashSet<>();
-        UUID cameraEntityId;
-        Phase phase = Phase.PREPARATION;
-        int initialPlayers;
-        int wave;
-        int actionCooldown;
-        int introTicks;
-        int tokens;
-        boolean victoryDelay;
-        UUID bossId;
-        int bossCooldown;
-        int fangsCooldown;
-        int fireCooldown;
-        int comboCooldown;
-        int auraTicks;
-        boolean bossPhaseTwo;
-        boolean bossPhaseThree;
-        boolean bossPhaseFour;
-        int veilTransitionTick;
-        boolean veilTransitionDone;
-        boolean furyTransitionActive;
-        int furyTransitionTick;
-        BlockPos furyLanding;
-        UUID veilGuardianId;
-        int veilRegenCooldown;
-        int skullCooldown;
-        int skullBurstDelay;
-        int skullsInBurst;
-        boolean regearChestsSpawned;
-        Set<BlockPos> regearChests = new HashSet<>();
-        Set<UUID> regearChestMarkers = new HashSet<>();
-    }
-
-    private static class ArenaBuildTask {
-        final BlockPos center;
-        final int radius;
-        int stage;
-        int dx;
-        int dz;
-        boolean structuresBuilt;
-
-        ArenaBuildTask(BlockPos center, int radius) {
-            this.center = center;
-            this.radius = radius;
-            this.dx = -radius - 10;
-            this.dz = -radius - 10;
-        }
-    }
+    private final EventTrialArenaBuilder arenaBuilder = new EventTrialArenaBuilder();
+    private final EventTrialCinematicController cinematicController = new EventTrialCinematicController();
 
     public EventTrialManager(MCExtremo mod) {
         this.mod = mod;
@@ -186,8 +122,8 @@ public class EventTrialManager {
         event.wave = 0;
         event.actionCooldown = 0;
         event.introTicks = config.introActivada ? config.introDuracionTicks : 0;
-        event.phase = Phase.GENERATING;
-        event.arenaBuild = new ArenaBuildTask(center, config.radioArena);
+        event.phase = EventTrialPhase.GENERATING;
+        event.arenaBuild = new EventArenaBuildTask(center, config.radioArena);
         event.bossCooldown = 12 * 20;
         event.fangsCooldown = 10 * 20;
         event.fireCooldown = 8 * 20;
@@ -220,7 +156,7 @@ public class EventTrialManager {
         ServerWorld world = server.getWorld(World.END);
         if (world == null) world = server.getOverworld();
 
-        if (event.phase == Phase.GENERATING) {
+        if (event.phase == EventTrialPhase.GENERATING) {
             tickArenaGeneration(server, world, event);
             return;
         }
@@ -241,8 +177,8 @@ public class EventTrialManager {
             }
         }
 
-        if (event.phase == Phase.INTRO) {
-            tickIntro(server, world, event);
+        if (event.phase == EventTrialPhase.INTRO) {
+            cinematicController.tickIntro(server, world, event);
             return;
         }
 
@@ -288,15 +224,15 @@ public class EventTrialManager {
         if (!isParticipant(player.getUuid()) || activeEvent == null) return false;
 
         EventTrial event = activeEvent;
-        if (event.phase != Phase.INTRO) {
+        if (event.phase != EventTrialPhase.INTRO) {
             event.tokens = Math.max(0, event.tokens - 1);
         }
         player.setHealth(player.getMaxHealth());
         player.getHungerManager().setFoodLevel(20);
         player.getHungerManager().setSaturationLevel(10.0f);
-        if (event.phase == Phase.INTRO) {
+        if (event.phase == EventTrialPhase.INTRO) {
             ServerWorld world = getEventWorld(player.getServer());
-            prepareIntroViewer(player, world, event.center, ModConfig.get().eventTrial);
+            cinematicController.prepareIntroViewer(player, world, event.center, ModConfig.get().eventTrial);
             Entity camera = event.cameraEntityId == null ? null : world.getEntity(event.cameraEntityId);
             if (camera != null) {
                 player.setCameraEntity(camera);
@@ -305,11 +241,11 @@ public class EventTrialManager {
             teleportToArena(player, getEventWorld(player.getServer()), event.center);
         }
         player.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, 20 * 5, 1, false, true));
-        player.sendMessage(TextUtil.literal(event.phase == Phase.INTRO
+        player.sendMessage(TextUtil.literal(event.phase == EventTrialPhase.INTRO
             ? "&eEntrada estabilizada. &7No pierdes tokens durante la intro."
             : "&cCaida evitada. &7Tokens grupales restantes: &e" + event.tokens), false);
 
-        if (event.phase != Phase.INTRO && event.tokens <= 0) {
+        if (event.phase != EventTrialPhase.INTRO && event.tokens <= 0) {
             finishFailure(player.getServer(), "&cEl grupo se quedo sin tokens. Event trial fallido.");
         }
         return true;
@@ -318,10 +254,10 @@ public class EventTrialManager {
     public void handleDisconnect(ServerPlayerEntity player) {
         if (activeEvent == null || !activeEvent.participants.remove(player.getUuid())) return;
         activeEvent.bossBar.removePlayer(player);
-        resetIntroPlayerState(player);
+        cinematicController.resetIntroPlayerState(player);
         TrialCinematicNetworking.sendStop(player);
         player.sendMessage(Text.empty(), true);
-        discardIntroAvatar(getEventWorld(player.getServer()), activeEvent, player.getUuid());
+        cinematicController.discardIntroAvatar(getEventWorld(player.getServer()), activeEvent, player.getUuid());
         restoreInventory(player);
         mod.getDataManager().setTrialState(player.getUuid(), ReviveTrialManager.STATE_ALIVE);
     }
@@ -359,8 +295,8 @@ public class EventTrialManager {
             return;
         }
 
-        boolean complete = processArenaBuild(world, event.arenaBuild, 520);
-        updateGenerationBar(event);
+        boolean complete = arenaBuilder.processArenaBuild(world, event.arenaBuild, 520);
+        arenaBuilder.updateGenerationBar(event);
         if (!complete) return;
 
         List<ServerPlayerEntity> players = new ArrayList<>();
@@ -379,19 +315,19 @@ public class EventTrialManager {
         event.tokens = players.size() * config.tokensPorJugador;
         event.actionCooldown = Math.max(20, config.preparacionSegundos * 20);
         event.introTicks = config.introActivada ? config.introDuracionTicks : 0;
-        event.phase = config.introActivada ? Phase.INTRO : Phase.PREPARATION;
+        event.phase = config.introActivada ? EventTrialPhase.INTRO : EventTrialPhase.PREPARATION;
         event.pendingPlayers.clear();
         event.bossBar.setName(TextUtil.literal(config.introActivada ? "&5Event Trial &7- Entrada" : "&5Event Trial &7- Preparacion"));
         event.bossBar.setPercent(1.0f);
 
-        ArmorStandEntity camera = config.introActivada ? spawnCentralCamera(world, event.center) : null;
+        ArmorStandEntity camera = config.introActivada ? cinematicController.spawnCentralCamera(world, event.center) : null;
         if (camera != null) {
             event.cameraEntityId = camera.getUuid();
         }
 
         for (int i = 0; i < players.size(); i++) {
             ServerPlayerEntity player = players.get(i);
-            BlockPos landing = getLandingPosition(world, event.center, i, players.size());
+            BlockPos landing = cinematicController.getLandingPosition(world, event.center, i, players.size());
             event.participants.add(player.getUuid());
             event.landingPositions.put(player.getUuid(), landing);
             saveAndHideInventory(player);
@@ -399,281 +335,54 @@ public class EventTrialManager {
             mod.getDataManager().setTrialState(player.getUuid(), STATE_EVENT_TRIAL);
             player.changeGameMode(GameMode.SURVIVAL);
             if (config.introActivada) {
-                prepareIntroViewer(player, world, event.center, config);
+                cinematicController.prepareIntroViewer(player, world, event.center, config);
                 if (camera != null) {
                     player.setCameraEntity(camera);
                 }
-                createIntroAvatar(world, event, player, landing, config);
+                cinematicController.createIntroAvatar(world, event, player, landing, config);
                 TrialCinematicNetworking.sendEventIntro(player, Vec3d.ofCenter(event.center), config.introDuracionTicks,
                     "Entrando al Event Trial", "La arena te reclama");
             } else {
-                teleportToLanding(player, world, landing);
+                cinematicController.teleportToLanding(player, world, landing);
             }
         }
 
         broadcast(server, "&5&lEVENT TRIAL &7- &e" + players.size() + " jugador(es) entraron al evento.");
     }
 
-    private boolean processArenaBuild(ServerWorld world, ArenaBuildTask task, int columnBudget) {
-        if (task == null) return true;
-        int processed = 0;
-        while (processed < columnBudget && task.stage < 2) {
-            if (task.stage == 0) {
-                clearArenaColumn(world, task.center, task.radius, task.dx, task.dz);
-                if (advanceArenaCursor(task, task.radius + 10)) {
-                    task.stage = 1;
-                    task.dx = -task.radius;
-                    task.dz = -task.radius;
-                }
-            } else if (task.stage == 1) {
-                buildArenaBaseColumn(world, task.center, task.radius, task.dx, task.dz);
-                if (advanceArenaCursor(task, task.radius)) {
-                    task.stage = 2;
-                }
-            }
-            processed++;
-        }
-        if (task.stage < 2) return false;
-        if (!task.structuresBuilt) {
-            buildArenaStructures(world, task.center, task.radius);
-            task.structuresBuilt = true;
-        }
-        return true;
-    }
 
-    private boolean advanceArenaCursor(ArenaBuildTask task, int limit) {
-        task.dz++;
-        if (task.dz <= limit) return false;
-        task.dz = -limit;
-        task.dx++;
-        return task.dx > limit;
-    }
 
-    private void updateGenerationBar(EventTrial event) {
-        if (event.arenaBuild == null) return;
-        int radius = event.arenaBuild.radius;
-        int clearSide = radius + 10;
-        int clearTotal = (clearSide * 2 + 1) * (clearSide * 2 + 1);
-        int baseTotal = (radius * 2 + 1) * (radius * 2 + 1);
-        int done;
-        if (event.arenaBuild.stage == 0) {
-            done = (event.arenaBuild.dx + clearSide) * (clearSide * 2 + 1) + (event.arenaBuild.dz + clearSide);
-        } else if (event.arenaBuild.stage == 1) {
-            done = clearTotal + (event.arenaBuild.dx + radius) * (radius * 2 + 1) + (event.arenaBuild.dz + radius);
-        } else {
-            done = clearTotal + baseTotal;
-        }
-        float percent = Math.max(0.03f, Math.min(1.0f, done / (float) (clearTotal + baseTotal)));
-        event.bossBar.setPercent(percent);
-        event.bossBar.setName(Text.literal("\u00A75Event Trial \u00A77| \u00A7fGenerando arena \u00A78- \u00A7e" + Math.round(percent * 100.0f) + "%"));
-    }
 
-    private void tickIntro(MinecraftServer server, ServerWorld world, EventTrial event) {
-        ModConfig.EventTrial config = ModConfig.get().eventTrial;
-        int total = Math.max(1, config.introDuracionTicks);
-        event.introTicks = Math.max(0, event.introTicks - 1);
-        float remaining = event.introTicks / (float) total;
-        double height = Math.max(0.0, config.introAltura * remaining);
 
-        event.bossBar.setPercent(Math.max(0.05f, 1.0f - remaining));
-        event.bossBar.setName(Text.literal("\u00A75Event Trial \u00A77| \u00A7fEntrada \u00A78- \u00A7e"
-            + Math.max(1, event.introTicks / 20) + "s"));
 
-        for (UUID uuid : new HashSet<>(event.participants)) {
-            ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
-            if (player == null) continue;
-            BlockPos landing = event.landingPositions.getOrDefault(uuid, event.center.add(0, 2, 0));
 
-            double y = landing.getY() + 1.0 + height;
-            tickIntroAvatar(world, event, uuid, landing, y);
-            player.sendMessage(Text.literal("\u00A7dDescendiendo a la arena..."), true);
 
-            if (config.introHazLuz && world.getTime() % 2L == 0L) {
-                spawnIntroBeam(world, landing, y);
-            }
 
-            if (height <= 2.0 && event.impactPrimedPlayers.add(uuid)) {
-                spawnLandingShockwave(world, landing);
-            }
 
-            if (height <= 0.6 && event.landedPlayers.add(uuid)) {
-                discardIntroAvatar(world, event, uuid);
-                if (config.introCirculoFuego) {
-                    spawnLandingFireCircle(world, landing);
-                }
-            }
-        }
 
-        if (event.introTicks <= 0 || event.landedPlayers.size() >= event.participants.size()) {
-            for (UUID uuid : new HashSet<>(event.participants)) {
-                ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
-                if (player == null) continue;
-                BlockPos landing = event.landingPositions.getOrDefault(uuid, event.center.add(0, 2, 0));
-                if (event.landedPlayers.add(uuid) && config.introCirculoFuego) {
-                    spawnLandingFireCircle(world, landing);
-                }
-                player.setCameraEntity(player);
-                teleportToLanding(player, world, landing);
-                resetIntroPlayerState(player);
-            }
-            discardIntroActors(world, event);
-            discardIntroCamera(world, event);
-            event.phase = Phase.PREPARATION;
-            event.actionCooldown = Math.max(20, config.preparacionSegundos * 20);
-            broadcast(server, "&5Event Trial &7- &eLa entrada termino. Preparate.");
-        }
-    }
 
-    private ArmorStandEntity spawnCentralCamera(ServerWorld world, BlockPos center) {
-        Vec3d pos = Vec3d.ofCenter(center).add(0.0, 2.5, 0.0);
-        ArmorStandEntity camera = new ArmorStandEntity(world, pos.x, pos.y, pos.z);
-        camera.setInvisible(true);
-        camera.setNoGravity(true);
-        camera.setInvulnerable(true);
-        setArmorStandMarker(camera);
-        camera.setCustomName(Text.literal("mcextremo_camera"));
-        camera.setCustomNameVisible(false);
-        camera.addCommandTag("mcextremo_event_camera");
-        camera.refreshPositionAndAngles(pos.x, pos.y, pos.z, 0.0f, -85.0f);
-        world.spawnEntity(camera);
-        return camera;
-    }
 
-    private void setArmorStandMarker(ArmorStandEntity armorStand) {
-        NbtCompound nbt = new NbtCompound();
-        armorStand.writeNbt(nbt);
-        nbt.putBoolean("Marker", true);
-        armorStand.readNbt(nbt);
-    }
 
-    private void prepareIntroViewer(ServerPlayerEntity player, ServerWorld world, BlockPos center, ModConfig.EventTrial config) {
-        BlockPos safe = eventSafeIntroPosition(center);
-        player.teleport(world, safe.getX() + 0.5, safe.getY(), safe.getZ() + 0.5, player.getYaw(), player.getPitch());
-        player.setVelocity(0.0, 0.0, 0.0);
-        player.velocityModified = true;
-        player.fallDistance = 0.0f;
-        player.setInvulnerable(true);
-        player.setInvisible(true);
-        player.setNoGravity(true);
-        player.setHealth(player.getMaxHealth());
-        player.getHungerManager().setFoodLevel(20);
-        player.getHungerManager().setSaturationLevel(20.0f);
-        player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOW_FALLING, config.introDuracionTicks + 40, 0, false, false));
-        player.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, config.introDuracionTicks + 40, 4, false, false));
-        player.addStatusEffect(new StatusEffectInstance(StatusEffects.INVISIBILITY, 12, 0, false, false));
-    }
 
-    private BlockPos eventSafeIntroPosition(BlockPos center) {
-        return center.add(0, 10, 0);
-    }
 
-    private void createIntroAvatar(ServerWorld world, EventTrial event, ServerPlayerEntity player, BlockPos landing, ModConfig.EventTrial config) {
-        ArmorStandEntity avatar = new ArmorStandEntity(world, landing.getX() + 0.5, landing.getY() + 1.0 + config.introAltura, landing.getZ() + 0.5);
-        avatar.setInvulnerable(true);
-        avatar.setNoGravity(true);
-        avatar.setCustomName(player.getName());
-        avatar.setCustomNameVisible(true);
-        avatar.addCommandTag("mcextremo_event_avatar");
-        avatar.equipStack(EquipmentSlot.HEAD, enchantedItem(Items.DIAMOND_HELMET, Enchantments.PROTECTION, 2));
-        avatar.equipStack(EquipmentSlot.CHEST, enchantedItem(Items.DIAMOND_CHESTPLATE, Enchantments.PROTECTION, 2));
-        avatar.equipStack(EquipmentSlot.LEGS, enchantedItem(Items.DIAMOND_LEGGINGS, Enchantments.PROTECTION, 2));
-        avatar.equipStack(EquipmentSlot.FEET, enchantedItem(Items.DIAMOND_BOOTS, Enchantments.PROTECTION, 2));
-        avatar.equipStack(EquipmentSlot.MAINHAND, enchantedItem(Items.DIAMOND_SWORD, Enchantments.SHARPNESS, 2));
-        world.spawnEntity(avatar);
-        event.introAvatars.put(player.getUuid(), avatar.getUuid());
-    }
 
-    private void tickIntroAvatar(ServerWorld world, EventTrial event, UUID playerUuid, BlockPos landing, double y) {
-        UUID avatarUuid = event.introAvatars.get(playerUuid);
-        Entity entity = avatarUuid == null ? null : world.getEntity(avatarUuid);
-        if (entity == null) return;
-        double angle = Math.atan2(event.center.getZ() - landing.getZ(), event.center.getX() - landing.getX());
-        entity.refreshPositionAndAngles(landing.getX() + 0.5, y, landing.getZ() + 0.5, (float) Math.toDegrees(angle) - 90.0f, 0.0f);
-        entity.setVelocity(0.0, 0.0, 0.0);
-    }
 
-    private void resetIntroPlayerState(ServerPlayerEntity player) {
-        if (player.getCameraEntity() != player) {
-            player.setCameraEntity(player);
-        }
-        player.setInvulnerable(false);
-        player.setInvisible(false);
-        player.setNoGravity(false);
-        player.fallDistance = 0.0f;
-    }
 
-    private void discardIntroAvatar(ServerWorld world, EventTrial event, UUID playerUuid) {
-        UUID avatarUuid = event.introAvatars.remove(playerUuid);
-        if (avatarUuid == null) return;
-        Entity entity = world.getEntity(avatarUuid);
-        if (entity != null) entity.discard();
-    }
 
-    private void discardIntroActors(ServerWorld world, EventTrial event) {
-        for (UUID uuid : new HashSet<>(event.introAvatars.values())) {
-            Entity entity = world.getEntity(uuid);
-            if (entity != null) entity.discard();
-        }
-        event.introAvatars.clear();
-    }
 
-    private void discardIntroCamera(ServerWorld world, EventTrial event) {
-        if (event.cameraEntityId == null) return;
-        Entity camera = world.getEntity(event.cameraEntityId);
-        if (camera != null) camera.discard();
-        event.cameraEntityId = null;
-    }
 
-    private void spawnIntroBeam(ServerWorld world, BlockPos landing, double playerY) {
-        double x = landing.getX() + 0.5;
-        double z = landing.getZ() + 0.5;
-        double top = Math.max(playerY + 1.5, landing.getY() + 2.0);
-        for (double y = landing.getY() + 0.3; y <= top; y += 1.35) {
-            double distanceToTop = Math.max(0.0, top - y);
-            double normalized = Math.max(0.0, 1.0 - distanceToTop / Math.max(1.0, top - landing.getY()));
-            int count = 1 + (int) Math.round(normalized * 3.0);
-            double spread = 0.04 + normalized * 0.12;
-            world.spawnParticles(ParticleTypes.END_ROD, x, y, z, count, spread, 0.08, spread, 0.004 + normalized * 0.006);
-            if (((int) y) % 4 == 0) {
-                world.spawnParticles(ParticleTypes.ELECTRIC_SPARK, x, y, z, 2 + (int) Math.round(normalized * 2.0), 0.16, 0.12, 0.16, 0.02);
-            }
-        }
-        int crown = world.getTime() % 10L == 0L ? 18 : 8;
-        world.spawnParticles(ParticleTypes.REVERSE_PORTAL, x, top, z, crown, 0.35, 0.2, 0.35, 0.03);
-    }
 
-    private void spawnLandingShockwave(ServerWorld world, BlockPos landing) {
-        double x = landing.getX() + 0.5;
-        double y = landing.getY() + 1.08;
-        double z = landing.getZ() + 0.5;
-        for (int i = 0; i < 48; i++) {
-            double angle = Math.PI * 2.0 * i / 48.0;
-            double radius = 1.2 + (i % 3) * 0.65;
-            double px = x + Math.cos(angle) * radius;
-            double pz = z + Math.sin(angle) * radius;
-            world.spawnParticles(ParticleTypes.CLOUD, px, y, pz, 1, 0.03, 0.02, 0.03, 0.02);
-            world.spawnParticles(ParticleTypes.ELECTRIC_SPARK, px, y + 0.1, pz, 1, 0.02, 0.02, 0.02, 0.03);
-        }
-        world.spawnParticles(ParticleTypes.FLASH, x, y + 0.3, z, 1, 0.0, 0.0, 0.0, 0.0);
-        world.playSound(null, landing, SoundEvents.ENTITY_GENERIC_EXPLODE, SoundCategory.PLAYERS, 0.35f, 1.6f);
-    }
 
-    private void spawnLandingFireCircle(ServerWorld world, BlockPos landing) {
-        double x = landing.getX() + 0.5;
-        double y = landing.getY() + 1.05;
-        double z = landing.getZ() + 0.5;
-        for (int i = 0; i < 36; i++) {
-            double angle = Math.PI * 2.0 * i / 36.0;
-            double px = x + Math.cos(angle) * 2.35;
-            double pz = z + Math.sin(angle) * 2.35;
-            world.spawnParticles(ParticleTypes.FLAME, px, y, pz, 2, 0.04, 0.04, 0.04, 0.01);
-            world.spawnParticles(ParticleTypes.SOUL_FIRE_FLAME, px, y + 0.1, pz, 1, 0.04, 0.04, 0.04, 0.01);
-        }
-        world.spawnParticles(ParticleTypes.LAVA, x, y, z, 10, 0.6, 0.05, 0.6, 0.02);
-        world.spawnParticles(ParticleTypes.ELECTRIC_SPARK, x, y + 0.3, z, 28, 1.2, 0.2, 1.2, 0.06);
-        world.playSound(null, landing, SoundEvents.BLOCK_BEACON_ACTIVATE, SoundCategory.PLAYERS, 1.0f, 1.3f);
-        world.playSound(null, landing, SoundEvents.ITEM_FIRECHARGE_USE, SoundCategory.PLAYERS, 0.6f, 0.8f);
-    }
+
+
+
+
+
+
+
+
+
+
 
     private void spawnWave(ServerWorld world, EventTrial event) {
         discardMobs(world, event.mobs);
@@ -1068,7 +777,7 @@ public class EventTrialManager {
         marker.setInvulnerable(true);
         marker.setCustomName(Text.literal("\u00A7aRe-equipamiento"));
         marker.setCustomNameVisible(false);
-        setArmorStandMarker(marker);
+        cinematicController.setArmorStandMarker(marker);
         marker.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 20 * 60 * 10, 0, false, false));
         marker.addCommandTag("mcextremo_regear_marker");
         world.spawnEntity(marker);
@@ -1435,7 +1144,7 @@ public class EventTrialManager {
     }
 
     private void restoreAndReturn(ServerPlayerEntity player) {
-        resetIntroPlayerState(player);
+        cinematicController.resetIntroPlayerState(player);
         TrialCinematicNetworking.sendStop(player);
         player.sendMessage(Text.empty(), true);
         restoreInventory(player);
@@ -1663,310 +1372,43 @@ public class EventTrialManager {
         };
     }
 
-    private void generateArena(ServerWorld world, BlockPos center, int radius) {
-        clearArena(world, center, radius);
-        for (int dx = -radius; dx <= radius; dx++) {
-            for (int dz = -radius; dz <= radius; dz++) {
-                buildArenaBaseColumn(world, center, radius, dx, dz);
-            }
-        }
-        buildArenaStructures(world, center, radius);
-    }
 
-    private void clearArenaColumn(ServerWorld world, BlockPos center, int radius, int dx, int dz) {
-        int r = radius + 10;
-        if (dx * dx + dz * dz > r * r) return;
-        for (int dy = -10; dy <= 28; dy++) {
-            world.setBlockState(center.add(dx, dy, dz), Blocks.AIR.getDefaultState());
-        }
-    }
 
-    private void buildArenaBaseColumn(ServerWorld world, BlockPos center, int radius, int dx, int dz) {
-        double distance = Math.sqrt(dx * dx + dz * dz);
-        if (distance > radius) return;
-        int thickness = Math.max(2, (int) Math.round(8 - distance / 14.0));
-        for (int dy = 0; dy < thickness; dy++) {
-            world.setBlockState(center.add(dx, -dy, dz), Blocks.END_STONE.getDefaultState());
-        }
-        if (distance <= radius - 5) {
-            world.setBlockState(center.add(dx, 1, dz),
-                (Math.abs(dx * 13 + dz * 7) % 11 == 0 ? Blocks.PURPUR_BLOCK : Blocks.END_STONE_BRICKS).getDefaultState());
-        }
-        if (distance > radius - 4) {
-            world.setBlockState(center.add(dx, 1, dz), Blocks.END_STONE_BRICKS.getDefaultState());
-        }
-    }
 
-    private void buildArenaStructures(ServerWorld world, BlockPos center, int radius) {
-        buildCentralPlatform(world, center);
-        buildRunicRings(world, center, radius);
-        buildLandingPads(world, center, radius);
-        buildTower(world, center.add(radius - 18, 2, 0), 7, 16);
-        buildTower(world, center.add(-radius + 18, 2, 0), 7, 16);
-        buildTower(world, center.add(0, 2, radius - 18), 7, 16);
-        buildTower(world, center.add(0, 2, -radius + 18), 7, 16);
-        buildTower(world, center.add(radius - 24, 2, radius - 24), 5, 10);
-        buildTower(world, center.add(-radius + 24, 2, radius - 24), 5, 10);
-        buildTower(world, center.add(radius - 24, 2, -radius + 24), 5, 10);
-        buildTower(world, center.add(-radius + 24, 2, -radius + 24), 5, 10);
-        buildBridge(world, center, radius, 1, 0);
-        buildBridge(world, center, radius, -1, 0);
-        buildBridge(world, center, radius, 0, 1);
-        buildBridge(world, center, radius, 0, -1);
-        buildRitualObelisks(world, center, radius);
-        buildOuterCrystals(world, center, radius);
-        buildLightPylons(world, center, radius);
-        buildBrokenArches(world, center, radius);
-        buildLowRuins(world, center, radius);
-        buildCorruptedVeins(world, center, radius);
-        buildMinorAltars(world, center, radius);
-        buildCover(world, center, radius);
-        buildBarrierWall(world, center, radius);
-    }
 
-    private void buildCentralPlatform(ServerWorld world, BlockPos center) {
-        for (int dx = -10; dx <= 10; dx++) {
-            for (int dz = -10; dz <= 10; dz++) {
-                if (Math.sqrt(dx * dx + dz * dz) > 11) continue;
-                world.setBlockState(center.add(dx, 2, dz), Blocks.PURPUR_BLOCK.getDefaultState());
-            }
-        }
-        for (int i = 0; i < 4; i++) {
-            int x = i < 2 ? (i == 0 ? 8 : -8) : 0;
-            int z = i >= 2 ? (i == 2 ? 8 : -8) : 0;
-            world.setBlockState(center.add(x, 3, z), Blocks.END_ROD.getDefaultState());
-        }
-    }
 
-    private void buildTower(ServerWorld world, BlockPos base, int half, int height) {
-        for (int y = 0; y <= height; y++) {
-            for (int dx = -half; dx <= half; dx++) {
-                for (int dz = -half; dz <= half; dz++) {
-                    boolean wall = Math.abs(dx) == half || Math.abs(dz) == half;
-                    boolean floor = y % 5 == 0;
-                    boolean doorway = y <= 3 && (Math.abs(dx) <= 2 || Math.abs(dz) <= 2);
-                    if ((floor || wall) && !doorway) {
-                        world.setBlockState(base.add(dx, y, dz), (y % 10 == 0 ? Blocks.PURPUR_BLOCK : Blocks.END_STONE_BRICKS).getDefaultState());
-                    }
-                }
-            }
-        }
-        for (int y = 0; y <= height; y++) {
-            world.setBlockState(base.add(0, y, 0), Blocks.LADDER.getDefaultState());
-        }
-        world.setBlockState(base.add(0, height + 1, 0), Blocks.END_ROD.getDefaultState());
-    }
 
-    private void buildBridge(ServerWorld world, BlockPos center, int radius, int dirX, int dirZ) {
-        for (int i = 10; i < radius - 12; i++) {
-            for (int w = -3; w <= 3; w++) {
-                int x = dirX * i + (dirZ == 0 ? 0 : w);
-                int z = dirZ * i + (dirX == 0 ? 0 : w);
-                world.setBlockState(center.add(x, 2, z), Blocks.END_STONE_BRICKS.getDefaultState());
-            }
-        }
-    }
 
-    private void buildCover(ServerWorld world, BlockPos center, int radius) {
-        int[][] points = {{22, 18}, {-22, 18}, {22, -18}, {-22, -18}, {36, 0}, {-36, 0}, {0, 36}, {0, -36}};
-        for (int[] point : points) {
-            BlockPos base = center.add(point[0], 2, point[1]);
-            for (int dx = -4; dx <= 4; dx++) {
-                for (int dz = -2; dz <= 2; dz++) {
-                    world.setBlockState(base.add(dx, 0, dz), Blocks.END_STONE_BRICKS.getDefaultState());
-                }
-            }
-            for (int y = 1; y <= 3; y++) {
-                world.setBlockState(base.add(-4, y, 0), Blocks.OBSIDIAN.getDefaultState());
-                world.setBlockState(base.add(4, y, 0), Blocks.OBSIDIAN.getDefaultState());
-            }
-        }
-    }
 
-    private void buildRunicRings(ServerWorld world, BlockPos center, int radius) {
-        int[] rings = {16, 28, 44};
-        for (int ring : rings) {
-            int points = ring < 20 ? 48 : 72;
-            for (int i = 0; i < points; i++) {
-                double angle = Math.PI * 2.0 * i / points;
-                int x = (int) Math.round(Math.cos(angle) * ring);
-                int z = (int) Math.round(Math.sin(angle) * ring);
-                BlockPos pos = center.add(x, 2, z);
-                if (x * x + z * z >= (radius - 7) * (radius - 7)) continue;
-                boolean accent = i % 6 == 0;
-                world.setBlockState(pos, (accent ? Blocks.CRYING_OBSIDIAN : Blocks.PURPUR_BLOCK).getDefaultState());
-                if (accent && ring != 44) {
-                    world.setBlockState(pos.up(), Blocks.END_ROD.getDefaultState());
-                }
-            }
-        }
-    }
 
-    private void buildLandingPads(ServerWorld world, BlockPos center, int radius) {
-        int padRadius = Math.min(24, Math.max(12, radius / 4));
-        for (int i = 0; i < 12; i++) {
-            double angle = Math.PI * 2.0 * i / 12.0;
-            BlockPos pad = center.add((int) Math.round(Math.cos(angle) * padRadius), 2, (int) Math.round(Math.sin(angle) * padRadius));
-            for (int dx = -3; dx <= 3; dx++) {
-                for (int dz = -3; dz <= 3; dz++) {
-                    double distance = Math.sqrt(dx * dx + dz * dz);
-                    if (distance > 3.2) continue;
-                    world.setBlockState(pad.add(dx, 0, dz), (distance > 2.4 ? Blocks.CRYING_OBSIDIAN : Blocks.END_STONE_BRICKS).getDefaultState());
-                }
-            }
-            world.setBlockState(pad.up(), Blocks.END_ROD.getDefaultState());
-        }
-    }
 
-    private void buildRitualObelisks(ServerWorld world, BlockPos center, int radius) {
-        int obeliskRadius = Math.min(radius - 28, 46);
-        for (int i = 0; i < 8; i++) {
-            double angle = Math.PI * 2.0 * i / 8.0;
-            BlockPos base = center.add((int) Math.round(Math.cos(angle) * obeliskRadius), 2, (int) Math.round(Math.sin(angle) * obeliskRadius));
-            int height = i % 2 == 0 ? 9 : 7;
-            for (int y = 0; y < height; y++) {
-                world.setBlockState(base.add(0, y, 0), (y % 3 == 0 ? Blocks.CRYING_OBSIDIAN : Blocks.OBSIDIAN).getDefaultState());
-            }
-            world.setBlockState(base.add(0, height, 0), Blocks.END_ROD.getDefaultState());
-            world.setBlockState(base.add(1, 1, 0), Blocks.PURPUR_BLOCK.getDefaultState());
-            world.setBlockState(base.add(-1, 1, 0), Blocks.PURPUR_BLOCK.getDefaultState());
-            world.setBlockState(base.add(0, 1, 1), Blocks.PURPUR_BLOCK.getDefaultState());
-            world.setBlockState(base.add(0, 1, -1), Blocks.PURPUR_BLOCK.getDefaultState());
-        }
-    }
 
-    private void buildOuterCrystals(ServerWorld world, BlockPos center, int radius) {
-        int crystalRadius = radius - 9;
-        for (int i = 0; i < 16; i++) {
-            double angle = Math.PI * 2.0 * i / 16.0;
-            BlockPos base = center.add((int) Math.round(Math.cos(angle) * crystalRadius), 2, (int) Math.round(Math.sin(angle) * crystalRadius));
-            int height = 3 + i % 4;
-            for (int y = 0; y < height; y++) {
-                world.setBlockState(base.add(0, y, 0), (y == height - 1 ? Blocks.PURPUR_BLOCK : Blocks.OBSIDIAN).getDefaultState());
-            }
-            if (i % 2 == 0) {
-                world.setBlockState(base.add(1, 0, 0), Blocks.CRYING_OBSIDIAN.getDefaultState());
-                world.setBlockState(base.add(-1, 0, 0), Blocks.CRYING_OBSIDIAN.getDefaultState());
-            }
-        }
-    }
 
-    private void buildLightPylons(ServerWorld world, BlockPos center, int radius) {
-        int pylonRadius = Math.min(radius - 18, 58);
-        for (int i = 0; i < 12; i++) {
-            double angle = Math.PI * 2.0 * i / 12.0 + Math.PI / 12.0;
-            BlockPos base = center.add((int) Math.round(Math.cos(angle) * pylonRadius), 2, (int) Math.round(Math.sin(angle) * pylonRadius));
-            for (int y = 0; y <= 5; y++) {
-                world.setBlockState(base.add(0, y, 0), (y == 5 ? Blocks.END_ROD : Blocks.PURPUR_PILLAR).getDefaultState());
-            }
-            world.setBlockState(base.add(1, 0, 0), Blocks.END_STONE_BRICKS.getDefaultState());
-            world.setBlockState(base.add(-1, 0, 0), Blocks.END_STONE_BRICKS.getDefaultState());
-            world.setBlockState(base.add(0, 0, 1), Blocks.END_STONE_BRICKS.getDefaultState());
-            world.setBlockState(base.add(0, 0, -1), Blocks.END_STONE_BRICKS.getDefaultState());
-        }
-    }
 
-    private void buildBrokenArches(ServerWorld world, BlockPos center, int radius) {
-        int archRadius = Math.min(radius - 30, 38);
-        for (int i = 0; i < 8; i++) {
-            double angle = Math.PI * 2.0 * i / 8.0 + Math.PI / 8.0;
-            BlockPos base = center.add((int) Math.round(Math.cos(angle) * archRadius), 2, (int) Math.round(Math.sin(angle) * archRadius));
-            boolean alongX = Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle));
-            for (int side = -1; side <= 1; side += 2) {
-                for (int y = 0; y <= 4; y++) {
-                    BlockPos pillar = alongX ? base.add(side * 3, y, 0) : base.add(0, y, side * 3);
-                    world.setBlockState(pillar, (y % 2 == 0 ? Blocks.END_STONE_BRICKS : Blocks.PURPUR_PILLAR).getDefaultState());
-                }
-            }
-            for (int w = -2; w <= 2; w++) {
-                if (i % 2 == 0 && Math.abs(w) == 2) continue;
-                BlockPos top = alongX ? base.add(w, 5, 0) : base.add(0, 5, w);
-                world.setBlockState(top, Blocks.PURPUR_BLOCK.getDefaultState());
-            }
-            world.setBlockState(base, Blocks.CRYING_OBSIDIAN.getDefaultState());
-        }
-    }
 
-    private void buildLowRuins(ServerWorld world, BlockPos center, int radius) {
-        int[][] points = {
-            {16, 34}, {-16, 34}, {16, -34}, {-16, -34},
-            {42, 16}, {-42, 16}, {42, -16}, {-42, -16},
-            {30, 30}, {-30, 30}, {30, -30}, {-30, -30}
-        };
-        for (int i = 0; i < points.length; i++) {
-            BlockPos base = center.add(points[i][0], 2, points[i][1]);
-            boolean alongX = i % 2 == 0;
-            for (int l = -5; l <= 5; l++) {
-                if (Math.abs(l) <= 1) continue;
-                int height = 1 + Math.floorMod(i + l, 3);
-                for (int y = 0; y < height; y++) {
-                    BlockPos pos = alongX ? base.add(l, y, -2) : base.add(-2, y, l);
-                    world.setBlockState(pos, (y == height - 1 ? Blocks.END_STONE_BRICKS : Blocks.OBSIDIAN).getDefaultState());
-                }
-            }
-            world.setBlockState(base.add(0, 0, 0), Blocks.PURPUR_BLOCK.getDefaultState());
-            world.setBlockState(base.add(1, 0, 1), Blocks.CRYING_OBSIDIAN.getDefaultState());
-        }
-    }
 
-    private void buildCorruptedVeins(ServerWorld world, BlockPos center, int radius) {
-        for (int line = 0; line < 14; line++) {
-            double angle = Math.PI * 2.0 * line / 14.0;
-            int start = 18 + (line % 3) * 4;
-            int end = Math.min(radius - 12, start + 24);
-            for (int d = start; d < end; d += 3) {
-                int x = (int) Math.round(Math.cos(angle) * d + Math.sin(angle) * ((d + line) % 5 - 2));
-                int z = (int) Math.round(Math.sin(angle) * d - Math.cos(angle) * ((d + line) % 5 - 2));
-                BlockPos pos = center.add(x, 2, z);
-                if (x * x + z * z > (radius - 8) * (radius - 8)) continue;
-                world.setBlockState(pos, (d % 2 == 0 ? Blocks.CRYING_OBSIDIAN : Blocks.OBSIDIAN).getDefaultState());
-                if (d % 9 == 0) {
-                    world.setBlockState(pos.up(), Blocks.END_ROD.getDefaultState());
-                }
-            }
-        }
-    }
 
-    private void buildMinorAltars(ServerWorld world, BlockPos center, int radius) {
-        int altarRadius = Math.min(radius - 24, 52);
-        for (int i = 0; i < 10; i++) {
-            double angle = Math.PI * 2.0 * i / 10.0 + Math.PI / 10.0;
-            BlockPos base = center.add((int) Math.round(Math.cos(angle) * altarRadius), 2, (int) Math.round(Math.sin(angle) * altarRadius));
-            for (int dx = -2; dx <= 2; dx++) {
-                for (int dz = -2; dz <= 2; dz++) {
-                    if (Math.abs(dx) + Math.abs(dz) > 3) continue;
-                    world.setBlockState(base.add(dx, 0, dz), (Math.abs(dx) + Math.abs(dz) == 3 ? Blocks.OBSIDIAN : Blocks.PURPUR_BLOCK).getDefaultState());
-                }
-            }
-            world.setBlockState(base.up(), Blocks.CRYING_OBSIDIAN.getDefaultState());
-            world.setBlockState(base.up(2), Blocks.END_ROD.getDefaultState());
-        }
-    }
 
-    private void buildBarrierWall(ServerWorld world, BlockPos center, int radius) {
-        int barrierRadius = radius + 3;
-        for (int dx = -barrierRadius; dx <= barrierRadius; dx++) {
-            for (int dz = -barrierRadius; dz <= barrierRadius; dz++) {
-                double distance = Math.sqrt(dx * dx + dz * dz);
-                if (distance < barrierRadius - 1 || distance > barrierRadius + 1) continue;
-                for (int y = 1; y <= 12; y++) {
-                    world.setBlockState(center.add(dx, y, dz), Blocks.BARRIER.getDefaultState());
-                }
-            }
-        }
-    }
 
-    private void clearArena(ServerWorld world, BlockPos center, int radius) {
-        int r = radius + 10;
-        for (int dx = -r; dx <= r; dx++) {
-            for (int dz = -r; dz <= r; dz++) {
-                if (dx * dx + dz * dz > r * r) continue;
-                for (int dy = -10; dy <= 28; dy++) {
-                    world.setBlockState(center.add(dx, dy, dz), Blocks.AIR.getDefaultState());
-                }
-            }
-        }
-    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     private void cleanupEvent(MinecraftServer server, EventTrial event) {
         ServerWorld world = getEventWorld(server);
@@ -1975,13 +1417,13 @@ public class EventTrialManager {
         for (UUID uuid : new HashSet<>(event.participants)) {
             ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
             if (player != null) {
-                resetIntroPlayerState(player);
+                cinematicController.resetIntroPlayerState(player);
                 TrialCinematicNetworking.sendStop(player);
                 player.sendMessage(Text.empty(), true);
             }
         }
-        discardIntroActors(world, event);
-        discardIntroCamera(world, event);
+        cinematicController.discardIntroActors(world, event);
+        cinematicController.discardIntroCamera(world, event);
         cleanupRegearChests(world, event);
         discardMobs(world, event.mobs);
         Box box = new Box(event.center).expand(ModConfig.get().eventTrial.radioArena + 20, 40, ModConfig.get().eventTrial.radioArena + 20);
@@ -1991,7 +1433,7 @@ public class EventTrialManager {
             }
         }
         if (ModConfig.get().eventTrial.limpiarArenaAlTerminar) {
-            clearArena(world, event.center, ModConfig.get().eventTrial.radioArena);
+            arenaBuilder.clearArena(world, event.center, ModConfig.get().eventTrial.radioArena);
         }
     }
 
@@ -2020,36 +1462,11 @@ public class EventTrialManager {
         return world != null ? world : server.getOverworld();
     }
 
-    private BlockPos getLandingPosition(ServerWorld world, BlockPos center, int index, int totalPlayers) {
-        ModConfig.EventTrial config = ModConfig.get().eventTrial;
-        if (totalPlayers <= 1) {
-            return findSafeSpawn(world, center.add(0, 3, 0), center);
-        }
-        double angle = (Math.PI * 2.0 * index) / totalPlayers;
-        int radius = config.introRadioSpawn + (index % 2) * 4;
-        BlockPos preferred = center.add((int) Math.round(Math.cos(angle) * radius), 4, (int) Math.round(Math.sin(angle) * radius));
-        return findSafeSpawn(world, preferred, center);
-    }
 
-    private void teleportToIntroStart(ServerPlayerEntity player, ServerWorld world, BlockPos landing, ModConfig.EventTrial config) {
-        player.teleport(world, landing.getX() + 0.5, landing.getY() + 1.0 + config.introAltura, landing.getZ() + 0.5, player.getYaw(), -75.0f);
-        player.setHealth(player.getMaxHealth());
-        player.getHungerManager().setFoodLevel(20);
-        player.getHungerManager().setSaturationLevel(20.0f);
-        player.fallDistance = 0.0f;
-        player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOW_FALLING, config.introDuracionTicks + 40, 0, false, false));
-        player.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, config.introDuracionTicks + 40, 4, false, false));
-    }
 
-    private void teleportToLanding(ServerPlayerEntity player, ServerWorld world, BlockPos landing) {
-        player.teleport(world, landing.getX() + 0.5, landing.getY() + 1.0, landing.getZ() + 0.5, player.getYaw(), player.getPitch());
-        player.setVelocity(0.0, 0.0, 0.0);
-        player.velocityModified = true;
-        player.fallDistance = 0.0f;
-        player.setHealth(player.getMaxHealth());
-        player.getHungerManager().setFoodLevel(20);
-        player.getHungerManager().setSaturationLevel(20.0f);
-    }
+
+
+
 
     private void teleportToArena(ServerPlayerEntity player, ServerWorld world, BlockPos center) {
         player.teleport(world, center.getX() + 0.5, center.getY() + 5.0, center.getZ() + 0.5, player.getYaw(), player.getPitch());
