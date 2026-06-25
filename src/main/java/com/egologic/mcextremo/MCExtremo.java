@@ -128,6 +128,11 @@ public class MCExtremo implements ModInitializer {
         ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, damageSource, amount) -> {
             var attacker = damageSource.getAttacker();
             var source = damageSource.getSource();
+            if (eventTrialManager != null
+                && eventTrialManager.isProtectedVeilBoss(entity)
+                && (attacker instanceof PlayerEntity || source instanceof net.minecraft.entity.projectile.ProjectileEntity)) {
+                return false;
+            }
             if (entity.getCommandTags().contains(EventTrialManager.MOB_TAG)
                 && ((attacker != null && attacker.getCommandTags().contains(EventTrialManager.MOB_TAG))
                     || (source != null && source.getCommandTags().contains(EventTrialManager.MOB_TAG)))) {
