@@ -65,7 +65,6 @@ public class ReviveTrialManager {
     private final MCExtremo mod;
     private final Map<UUID, Trial> activeTrials = new HashMap<>();
     private final Map<UUID, SavedInventory> savedInventories = new HashMap<>();
-    private final Map<UUID, UUID> pendingBossIntroCameras = new HashMap<>();
 
     private record Trial(
         UUID uuid,
@@ -121,6 +120,9 @@ public class ReviveTrialManager {
     }
 
     private record SavedInventory(List<ItemStack> slots) {
+    }
+
+    private record WaveSpawnResult(Set<UUID> mobs, UUID bossCameraId) {
     }
 
     public ReviveTrialManager(MCExtremo mod) {
@@ -215,8 +217,8 @@ public class ReviveTrialManager {
             if (trial.wave() <= 0) {
                 updateBossBar(player, trial, 0);
                 if (trial.actionCooldown() <= 0) {
-                    Set<UUID> mobs = spawnWave(player, trial.center(), 1);
-                    trial = trial.nextWave(1, mobs, null);
+                    WaveSpawnResult spawn = spawnWave(player, trial.center(), 1);
+                    trial = trial.nextWave(1, spawn.mobs(), null);
                 }
                 entry.setValue(trial);
                 continue;
@@ -235,12 +237,9 @@ public class ReviveTrialManager {
                 } else if (trial.actionCooldown() <= 0) {
                     int nextWave = trial.wave() + 1;
                     spawnWaveClearEffects((ServerWorld) player.getWorld(), trial.center(), trial.wave());
-                    Set<UUID> mobs = spawnWave(player, trial.center(), nextWave);
-                    UUID bossId = nextWave >= ModConfig.get().reviveTrial.oleadas && !mobs.isEmpty() ? mobs.iterator().next() : null;
-                    trial = trial.nextWave(nextWave, mobs, bossId);
-                    if (bossId != null) {
-                        trial = trial.withBossCamera(pendingBossIntroCameras.remove(player.getUuid()));
-                    }
+                    WaveSpawnResult spawn = spawnWave(player, trial.center(), nextWave);
+                    UUID bossId = nextWave >= ModConfig.get().reviveTrial.oleadas && !spawn.mobs().isEmpty() ? spawn.mobs().iterator().next() : null;
+                    trial = trial.nextWave(nextWave, spawn.mobs(), bossId).withBossCamera(spawn.bossCameraId());
                     entry.setValue(trial);
                 } else {
                     updateBossBar(player, trial, 0);
@@ -462,10 +461,11 @@ public class ReviveTrialManager {
         player.sendMessage(Text.literal("\u00A7aFelicidades, superaste la prueba. \u00A7eReviviras en " + seconds + "s."), true);
     }
 
-    private Set<UUID> spawnWave(ServerPlayerEntity player, BlockPos center, int wave) {
+    private WaveSpawnResult spawnWave(ServerPlayerEntity player, BlockPos center, int wave) {
         ServerWorld world = (ServerWorld) player.getWorld();
         int amount = getWaveSize(wave);
         Set<UUID> mobs = new HashSet<>();
+        UUID bossCameraId = null;
         spawnWaveStartEffects(world, center, wave);
         boolean bossCameraCreated = false;
         if (wave >= ModConfig.get().reviveTrial.oleadas) {
@@ -503,14 +503,14 @@ public class ReviveTrialManager {
                 if (!bossCameraCreated) {
                     ArmorStandEntity camera = spawnBossCamera(world, center);
                     player.setCameraEntity(camera);
-                    pendingBossIntroCameras.put(player.getUuid(), camera.getUuid());
+                    bossCameraId = camera.getUuid();
                     bossCameraCreated = true;
                 }
                 TrialCinematicNetworking.sendBossIntro(player, zombie.getId(), zombie.getPos().add(0.0, zombie.getHeight() * 0.75, 0.0), BOSS_INTRO_TICKS, "El Coloso del Vacio desciende");
             }
             mobs.add(zombie.getUuid());
         }
-        return mobs;
+        return new WaveSpawnResult(mobs, bossCameraId);
     }
 
     private BlockPos getWaveSpawnPos(BlockPos center, int wave, int index) {
@@ -1006,7 +1006,6 @@ public class ReviveTrialManager {
     private void cleanupTrial(MinecraftServer server, Trial trial) {
         trial.bossBar().clearPlayers();
         ServerWorld world = getTrialWorld(server);
-        pendingBossIntroCameras.remove(trial.uuid());
         ServerPlayerEntity player = server.getPlayerManager().getPlayer(trial.uuid());
         if (player != null) {
             restoreBossCamera(world, player, trial);

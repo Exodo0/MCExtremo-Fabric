@@ -541,7 +541,7 @@ public class EventTrialManager {
     }
 
     private BlockPos eventSafeIntroPosition(BlockPos center) {
-        return center.add(0, 4, 0);
+        return center.add(0, 10, 0);
     }
 
     private void createIntroAvatar(ServerWorld world, EventTrial event, ServerPlayerEntity player, BlockPos landing, ModConfig.EventTrial config) {
