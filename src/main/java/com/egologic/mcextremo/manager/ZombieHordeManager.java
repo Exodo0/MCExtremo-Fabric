@@ -12,11 +12,16 @@ import net.minecraft.entity.mob.ZombieEntity;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
+import net.minecraft.world.Heightmap;
 
 import java.util.*;
 
 public class ZombieHordeManager {
+    private static final String HORDE_TAG = "mcextremo_horde";
+    private static final double LEASH_DISTANCE_SQ = 48.0 * 48.0;
+
     private final MCExtremo mod;
     private final Map<UUID, HordeEvent> activeHordes = new HashMap<>();
     private final Map<UUID, Integer> hordeCooldowns = new HashMap<>();
@@ -97,10 +102,16 @@ public class ZombieHordeManager {
 
         List<ZombieEntity> nearby = world.getEntitiesByClass(
             ZombieEntity.class, searchBox,
-            z -> z.isAlive() && !z.isRemoved() && z.squaredDistanceTo(player) < radio * radio
+            z -> z.isAlive()
+                && !z.isRemoved()
+                && !z.getCommandTags().contains("mcextremo_trial")
+                && !z.getCommandTags().contains("mcextremo_event_trial")
+                && !z.getCommandTags().contains(HORDE_TAG)
+                && z.squaredDistanceTo(player) < radio * radio
         );
 
         if (nearby.isEmpty()) return;
+        nearby.sort(Comparator.comparingDouble(z -> z.squaredDistanceTo(player)));
 
         int availableSlots = Math.max(0, config().maxGlobal - activeHordeZombies);
         int count = Math.min(Math.min(nearby.size(), hordeSize), availableSlots);
@@ -111,9 +122,7 @@ public class ZombieHordeManager {
         for (ZombieEntity z : hordeZombies) {
             mod.getZombieManager().applyScaling(z, day);
             mod.getZombieManager().applyHordeSpeedBoost(z);
-            if (z.getTarget() == null) {
-                z.setTarget(player);
-            }
+            prepareHordeZombie(world, z, player, true);
         }
 
         ServerBossBar bossBar = new ServerBossBar(
@@ -153,7 +162,7 @@ public class ZombieHordeManager {
 
             event.ticksRemaining--;
 
-            if (event.ticksRemaining <= 0 || event.player.isDead() || !event.player.isAlive()) {
+            if (event.player.isDead() || !event.player.isAlive()) {
                 endHorde(event);
                 it.remove();
                 continue;
@@ -163,19 +172,15 @@ public class ZombieHordeManager {
             int aliveZombies = alive.size();
             globalZombieCount = countActiveHordeZombies();
 
+            if (event.ticksRemaining <= 0) {
+                rewardHorde(event, true);
+                endHorde(event);
+                it.remove();
+                continue;
+            }
+
             if (aliveZombies == 0) {
-                int exp = getHordeExpReward(event.day);
-                if (SkillPassiveHandler.hasSkill(event.player, Skill.CAZADOR_T1)) {
-                    exp = Math.round(exp * 1.10f);
-                }
-                event.player.addExperience(exp);
-                String tierName = getHordeTierName(event.day);
-                mod.getRewardManager().giveHordeRewards(event.player, tierName, event.day);
-                if (SkillPassiveHandler.hasSkill(event.player, Skill.CAZADOR_T4)) {
-                    event.player.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, 8 * 20, 0, false, true));
-                }
-                event.player.sendMessage(Text.literal("\u00A7a\u2714 \u00A7a\u00A7l\u00A1" + tierName + " ELIMINADA! \u00A77Sobreviviste. \u00A7e+" + exp + " EXP"), true);
-                hordeCooldowns.put(event.player.getUuid(), config().cooldownSegundos * 20);
+                rewardHorde(event, false);
                 endHorde(event);
                 it.remove();
                 continue;
@@ -188,8 +193,10 @@ public class ZombieHordeManager {
             ));
 
             for (ZombieEntity z : alive) {
-                if (z.getTarget() == null) {
-                    z.setTarget(event.player);
+                prepareHordeZombie(world, z, event.player, false);
+                if (z.squaredDistanceTo(event.player) > LEASH_DISTANCE_SQ && world.getTime() % 40L == 0L) {
+                    teleportNearPlayer(world, z, event.player);
+                    event.player.sendMessage(Text.literal("\u00A7e\u2731 \u00A77Un zombie de la horda fue reposicionado cerca."), true);
                 }
             }
 
@@ -211,10 +218,52 @@ public class ZombieHordeManager {
     }
 
     private void endHorde(HordeEvent event) {
+        ServerWorld world = (ServerWorld) event.player.getWorld();
+        for (UUID uuid : new HashSet<>(event.zombieIds)) {
+            if (world.getEntity(uuid) instanceof ZombieEntity zombie) {
+                zombie.removeCommandTag(HORDE_TAG);
+            }
+        }
         event.zombieIds.clear();
         globalZombieCount = countActiveHordeZombies();
         event.bossBar.clearPlayers();
         event.bossBar.setVisible(false);
+    }
+
+    private void rewardHorde(HordeEvent event, boolean timeout) {
+        int exp = getHordeExpReward(event.day);
+        if (timeout) {
+            exp = Math.max(1, Math.round(exp * 0.65f));
+        }
+        if (SkillPassiveHandler.hasSkill(event.player, Skill.CAZADOR_T1)) {
+            exp = Math.round(exp * 1.10f);
+        }
+        event.player.addExperience(exp);
+        String tierName = getHordeTierName(event.day);
+        mod.getRewardManager().giveHordeRewards(event.player, tierName, event.day);
+        if (SkillPassiveHandler.hasSkill(event.player, Skill.CAZADOR_T4)) {
+            event.player.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, 8 * 20, 0, false, true));
+        }
+        String status = timeout ? "SOBREVIVIDA" : "ELIMINADA";
+        event.player.sendMessage(Text.literal("\u00A7a\u2714 \u00A7a\u00A7l\u00A1" + tierName + " " + status + "! \u00A77Recompensa recibida. \u00A7e+" + exp + " EXP"), true);
+        hordeCooldowns.put(event.player.getUuid(), config().cooldownSegundos * 20);
+    }
+
+    private void prepareHordeZombie(ServerWorld world, ZombieEntity zombie, ServerPlayerEntity player, boolean initialPlacement) {
+        zombie.addCommandTag(HORDE_TAG);
+        zombie.setPersistent();
+        zombie.setTarget(player);
+        zombie.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, initialPlacement ? 8 * 20 : 60, 0, false, true), player);
+        if (initialPlacement) {
+            teleportNearPlayer(world, zombie, player);
+        }
+    }
+
+    private void teleportNearPlayer(ServerWorld world, ZombieEntity zombie, ServerPlayerEntity player) {
+        BlockPos tpPos = findTeleportPos(player);
+        zombie.teleport(tpPos.getX() + 0.5, tpPos.getY(), tpPos.getZ() + 0.5);
+        zombie.setTarget(player);
+        zombie.velocityModified = true;
     }
 
     private List<ZombieEntity> getAliveZombies(HordeEvent event) {
@@ -244,12 +293,12 @@ public class ZombieHordeManager {
         net.minecraft.util.math.BlockPos playerPos = player.getBlockPos();
         net.minecraft.world.World world = player.getWorld();
         for (int attempts = 0; attempts < 20; attempts++) {
-            int dx = random.nextInt(11) - 5;
-            int dz = random.nextInt(11) - 5;
+            int dx = random.nextInt(17) - 8;
+            int dz = random.nextInt(17) - 8;
             net.minecraft.util.math.BlockPos candidate = playerPos.add(dx, 0, dz);
 
             net.minecraft.util.math.BlockPos ground = world.getTopPosition(
-                net.minecraft.world.Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, candidate);
+                Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, candidate);
 
             if (world.getBlockState(ground.down()).isSolidBlock(world, ground.down()) &&
                 world.getBlockState(ground).isAir() &&
