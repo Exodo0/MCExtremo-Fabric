@@ -810,11 +810,7 @@ public class EventTrialManager {
     }
 
     private void tickVeilPhase(MinecraftServer server, ServerWorld world, EventTrial event, ZombieEntity boss) {
-        boss.setAiDisabled(true);
-        boss.setInvulnerable(true);
-        boss.setNoGravity(true);
         boss.setTarget(null);
-        boss.teleport(event.center.getX() + 0.5, event.center.getY() + 8.0, event.center.getZ() + 0.5);
         boss.setVelocity(0.0, 0.0, 0.0);
         boss.velocityModified = true;
         spawnVeilAura(world, event, boss, 6.0, true);

@@ -69,6 +69,10 @@ public final class UpdateChecker {
         return cached;
     }
 
+    public static void shutdown() {
+        EXECUTOR.shutdownNow();
+    }
+
     public void notifyIfUpdateAvailable(ServerPlayerEntity player) {
         UpdateInfo info = cached;
         if (info == null || !info.updateAvailable() || !player.hasPermissionLevel(2)) return;

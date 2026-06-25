@@ -108,6 +108,7 @@ public class MCExtremo implements ModInitializer {
             if (skillTreeManager != null) {
                 skillTreeManager.save();
             }
+            UpdateChecker.shutdown();
         });
 
         registerPvpCancellation();
