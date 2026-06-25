@@ -11,6 +11,7 @@ import net.minecraft.util.math.Vec3d;
 public final class TrialCinematicNetworking {
     public static final Identifier BOSS_INTRO = new Identifier(MCExtremo.MOD_ID, "trial_boss_intro");
     public static final Identifier EVENT_INTRO = new Identifier(MCExtremo.MOD_ID, "event_trial_intro");
+    public static final Identifier STOP = new Identifier(MCExtremo.MOD_ID, "trial_cinematic_stop");
 
     private TrialCinematicNetworking() {
     }
@@ -36,5 +37,10 @@ public final class TrialCinematicNetworking {
         buf.writeDouble(center.z);
         buf.writeInt(durationTicks);
         ServerPlayNetworking.send(player, EVENT_INTRO, buf);
+    }
+
+    public static void sendStop(ServerPlayerEntity player) {
+        if (!ServerPlayNetworking.canSend(player, STOP)) return;
+        ServerPlayNetworking.send(player, STOP, PacketByteBufs.empty());
     }
 }

@@ -22,5 +22,8 @@ public final class TrialCinematicClientNetworking {
                 int durationTicks = buf.readInt();
                 client.execute(() -> TrialCinematicController.startEventIntro(center, durationTicks));
             });
+        ClientPlayNetworking.registerGlobalReceiver(TrialCinematicNetworking.STOP,
+            (client, handler, buf, responseSender) ->
+                client.execute(TrialCinematicController::stopAll));
     }
 }

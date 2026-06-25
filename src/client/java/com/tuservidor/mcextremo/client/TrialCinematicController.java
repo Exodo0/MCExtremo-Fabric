@@ -59,6 +59,11 @@ public final class TrialCinematicController {
         activeEventIntro = new EventIntro(center, ticks, ticks);
     }
 
+    public static void stopAll() {
+        activeIntro = null;
+        activeEventIntro = null;
+    }
+
     public static boolean hasEventCameraOverride() {
         return activeEventIntro != null && activeEventIntro.ticksRemaining() > 0;
     }

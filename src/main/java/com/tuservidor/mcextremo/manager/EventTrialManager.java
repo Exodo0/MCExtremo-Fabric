@@ -94,6 +94,9 @@ public class EventTrialManager {
         UUID bossId;
         int bossCooldown;
         int fangsCooldown;
+        int fireCooldown;
+        int comboCooldown;
+        int auraTicks;
         boolean bossPhaseTwo;
     }
 
@@ -151,6 +154,8 @@ public class EventTrialManager {
         event.phase = config.introActivada ? Phase.INTRO : Phase.PREPARATION;
         event.bossCooldown = 12 * 20;
         event.fangsCooldown = 10 * 20;
+        event.fireCooldown = 8 * 20;
+        event.comboCooldown = 16 * 20;
         event.bossBar = new ServerBossBar(
             TextUtil.literal("&5Event Trial &7- Preparacion"),
             BossBar.Color.PURPLE,
@@ -247,6 +252,7 @@ public class EventTrialManager {
                 event.actionCooldown = WAVE_DELAY_TICKS;
             }
         } else {
+            markLastAliveMobs(world, event, alive);
             if (event.wave >= ModConfig.get().eventTrial.oleadas) {
                 tickBoss(server, world, event);
             }
@@ -285,6 +291,8 @@ public class EventTrialManager {
         if (activeEvent == null || !activeEvent.participants.remove(player.getUuid())) return;
         activeEvent.bossBar.removePlayer(player);
         resetIntroPlayerState(player);
+        TrialCinematicNetworking.sendStop(player);
+        player.sendMessage(Text.empty(), true);
         discardIntroAvatar(getEventWorld(player.getServer()), activeEvent, player.getUuid());
         restoreInventory(player);
         mod.getDataManager().setTrialState(player.getUuid(), ReviveTrialManager.STATE_ALIVE);
@@ -295,6 +303,8 @@ public class EventTrialManager {
             return false;
         }
         restoreInventory(player);
+        TrialCinematicNetworking.sendStop(player);
+        player.sendMessage(Text.empty(), true);
         mod.getDataManager().setTrialState(player.getUuid(), ReviveTrialManager.STATE_ALIVE);
         mod.getLivesManager().restoreAfterRevive(player);
         player.sendMessage(TextUtil.literal("&eTu event trial fue interrumpido. &7Se restauro tu inventario."), false);
@@ -481,7 +491,7 @@ public class EventTrialManager {
         if (event.wave >= ModConfig.get().eventTrial.oleadas) {
             ZombieEntity boss = EntityType.ZOMBIE.create(world);
             if (boss != null) {
-                BlockPos spawn = findSafeSpawn(world, event.center.add(0, 4, 0), event.center);
+                BlockPos spawn = findArenaSpawn(world, event.center.add(0, 4, 0), event.center);
                 boss.refreshPositionAndAngles(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5, 0.0f, 0.0f);
                 boss.addCommandTag(MOB_TAG);
                 boss.setCustomName(Text.literal("\u00A75Coloso del Evento"));
@@ -508,7 +518,7 @@ public class EventTrialManager {
         for (int i = 0; i < amount; i++) {
             MobEntity mob = createWaveMob(world, event.wave, i);
             if (mob == null) continue;
-            BlockPos spawn = findSafeSpawn(world, getSpawnAnchor(event.center, event.wave, i), event.center);
+            BlockPos spawn = findArenaSpawn(world, getSpawnAnchor(event.center, event.wave, i), event.center);
             double angle = Math.atan2(event.center.getZ() - spawn.getZ(), event.center.getX() - spawn.getX());
             mob.refreshPositionAndAngles(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5, (float) Math.toDegrees(angle) - 90.0f, 0.0f);
             mob.addCommandTag(MOB_TAG);
@@ -517,6 +527,7 @@ public class EventTrialManager {
             if (mob instanceof ZombieEntity zombie) {
                 mod.getZombieManager().applyScaling(zombie, Math.max(35, mod.getZombieManager().getDay(world)));
             }
+            boostEventMobStats(mob, event.wave, false);
             targetNearestParticipant(mob);
             event.mobs.add(mob.getUuid());
         }
@@ -527,14 +538,16 @@ public class EventTrialManager {
         ZombieEntity boss = getBoss(world, event);
         if (boss == null || !boss.isAlive()) return;
         targetNearestParticipant(boss);
+        spawnBossAura(world, event, boss);
 
         float ratio = boss.getHealth() / Math.max(1.0f, boss.getMaxHealth());
         if (!event.bossPhaseTwo && ratio <= 0.50f) {
             event.bossPhaseTwo = true;
-            boss.setHealth(Math.min(boss.getMaxHealth(), boss.getHealth() + boss.getMaxHealth() * 0.35f));
+            boss.setHealth(Math.min(boss.getMaxHealth(), boss.getHealth() + boss.getMaxHealth() * 0.50f));
             boss.addStatusEffect(new StatusEffectInstance(StatusEffects.STRENGTH, 20 * 60 * 5, 1, false, true));
             boss.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 20 * 20, 1, false, true));
             spawnLightning(world, boss.getBlockPos());
+            spawnBossPhaseBurst(world, boss);
             broadcast(server, "&4El Coloso entra en Fase 2.");
         }
 
@@ -546,21 +559,212 @@ public class EventTrialManager {
             castFangs(world, event, event.bossPhaseTwo);
             event.fangsCooldown = event.bossPhaseTwo ? 12 * 20 : 16 * 20;
         }
+        if (--event.fireCooldown <= 0) {
+            castFireCone(world, event, boss, event.bossPhaseTwo);
+            event.fireCooldown = event.bossPhaseTwo ? 9 * 20 : 13 * 20;
+        }
+        if (--event.comboCooldown <= 0) {
+            executeBossCombo(server, world, event, boss);
+            event.comboCooldown = event.bossPhaseTwo ? 12 * 20 : 18 * 20;
+        }
     }
 
     private void spawnBossMinions(ServerWorld world, EventTrial event, int count) {
         for (int i = 0; i < count && event.mobs.size() < ModConfig.get().eventTrial.maxMobsActivos; i++) {
             MobEntity mob = createBossMinion(world, event.bossPhaseTwo, i);
             if (mob == null) continue;
-            BlockPos spawn = findSafeSpawn(world, getSpawnAnchor(event.center, event.wave, i + 20), event.center);
+            BlockPos spawn = findArenaSpawn(world, getSpawnAnchor(event.center, event.wave, i + 20), event.center);
             spawnLightning(world, spawn);
             mob.refreshPositionAndAngles(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5, 0.0f, 0.0f);
             mob.addCommandTag(MOB_TAG);
             equipBossMinion(mob, event.bossPhaseTwo, i);
             world.spawnEntity(mob);
+            boostEventMobStats(mob, event.bossPhaseTwo ? 6 : 4, true);
             targetNearestParticipant(mob);
             event.mobs.add(mob.getUuid());
         }
+    }
+
+    private void spawnBossAura(ServerWorld world, EventTrial event, ZombieEntity boss) {
+        event.auraTicks++;
+        int particles = event.bossPhaseTwo ? 18 : 10;
+        double radius = event.bossPhaseTwo ? 2.8 : 2.1;
+        for (int i = 0; i < particles; i++) {
+            double angle = (event.auraTicks * 0.18) + Math.PI * 2.0 * i / particles;
+            double x = boss.getX() + Math.cos(angle) * radius;
+            double z = boss.getZ() + Math.sin(angle) * radius;
+            double y = boss.getY() + 0.25 + (i % 4) * 0.45;
+            world.spawnParticles(event.bossPhaseTwo ? ParticleTypes.SOUL_FIRE_FLAME : ParticleTypes.DRAGON_BREATH,
+                x, y, z, 1, 0.04, 0.04, 0.04, 0.01);
+        }
+        if (event.bossPhaseTwo && world.getTime() % 6L == 0L) {
+            world.spawnParticles(ParticleTypes.ELECTRIC_SPARK,
+                boss.getX(), boss.getY() + boss.getHeight() * 0.75, boss.getZ(),
+                8, 0.8, 0.6, 0.8, 0.05);
+        }
+        if (world.getTime() % 80L == 0L) {
+            world.playSound(null, boss.getBlockPos(), SoundEvents.ENTITY_WITHER_AMBIENT, SoundCategory.HOSTILE, 0.7f, event.bossPhaseTwo ? 0.65f : 0.85f);
+        }
+    }
+
+    private void spawnBossPhaseBurst(ServerWorld world, ZombieEntity boss) {
+        world.spawnParticles(ParticleTypes.EXPLOSION, boss.getX(), boss.getY() + 1.2, boss.getZ(), 3, 0.8, 0.4, 0.8, 0.02);
+        world.spawnParticles(ParticleTypes.DRAGON_BREATH, boss.getX(), boss.getY() + 1.0, boss.getZ(), 160, 3.5, 1.2, 3.5, 0.06);
+        world.spawnParticles(ParticleTypes.SOUL_FIRE_FLAME, boss.getX(), boss.getY() + 0.5, boss.getZ(), 90, 2.6, 0.5, 2.6, 0.04);
+        world.playSound(null, boss.getBlockPos(), SoundEvents.ENTITY_ENDER_DRAGON_GROWL, SoundCategory.HOSTILE, 1.3f, 0.65f);
+    }
+
+    private void executeBossCombo(MinecraftServer server, ServerWorld world, EventTrial event, ZombieEntity boss) {
+        if (castAntiCampCombo(world, event, boss)) {
+            broadcast(server, "&5El Coloso castiga a quienes intentan escapar.");
+            return;
+        }
+        float ratio = boss.getHealth() / Math.max(1.0f, boss.getMaxHealth());
+        if (event.bossPhaseTwo && ratio <= 0.25f) {
+            castFinalCombo(world, event, boss);
+            broadcast(server, "&4El Coloso desata su ultimo combo.");
+            return;
+        }
+        int roll = world.random.nextInt(event.bossPhaseTwo ? 4 : 3);
+        if (roll == 0) {
+            castPressureCombo(world, event, boss);
+        } else if (roll == 1) {
+            castFireCombo(world, event, boss);
+        } else {
+            castFangWave(world, event, boss, event.bossPhaseTwo ? 3 : 2);
+        }
+    }
+
+    private void castPressureCombo(ServerWorld world, EventTrial event, ZombieEntity boss) {
+        world.playSound(null, boss.getBlockPos(), SoundEvents.ENTITY_RAVAGER_ROAR, SoundCategory.HOSTILE, 1.1f, 0.75f);
+        world.spawnParticles(ParticleTypes.SONIC_BOOM, boss.getX(), boss.getY() + 1.2, boss.getZ(), 1, 0.0, 0.0, 0.0, 0.0);
+        for (UUID uuid : event.participants) {
+            ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(uuid);
+            if (player == null || player.getWorld() != world) continue;
+            BlockPos strike = findGround(world, player.getBlockPos(), event.center).up();
+            spawnLightning(world, strike);
+            castFangLine(world, boss, boss.getPos(), player.getPos(), event.bossPhaseTwo ? 10 : 7);
+        }
+        spawnBossMinions(world, event, event.bossPhaseTwo ? 5 : 3);
+    }
+
+    private void castFireCombo(ServerWorld world, EventTrial event, ZombieEntity boss) {
+        castFireCone(world, event, boss, event.bossPhaseTwo);
+        castFireRing(world, event, boss, event.bossPhaseTwo ? 7.0 : 5.0);
+        world.playSound(null, boss.getBlockPos(), SoundEvents.ENTITY_BLAZE_SHOOT, SoundCategory.HOSTILE, 1.0f, 0.7f);
+    }
+
+    private void castFinalCombo(ServerWorld world, EventTrial event, ZombieEntity boss) {
+        castFireRing(world, event, boss, 8.0);
+        castFangWave(world, event, boss, 4);
+        spawnBossMinions(world, event, 6);
+        boss.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 20 * 8, 1, false, true));
+        boss.addStatusEffect(new StatusEffectInstance(StatusEffects.STRENGTH, 20 * 8, 1, false, true));
+    }
+
+    private boolean castAntiCampCombo(ServerWorld world, EventTrial event, ZombieEntity boss) {
+        boolean cast = false;
+        double maxDistance = ModConfig.get().eventTrial.radioArena * 0.68;
+        for (UUID uuid : event.participants) {
+            ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(uuid);
+            if (player == null || player.getWorld() != world) continue;
+            double dx = player.getX() - (event.center.getX() + 0.5);
+            double dz = player.getZ() - (event.center.getZ() + 0.5);
+            boolean campingHigh = player.getY() > event.center.getY() + 9;
+            boolean campingFar = dx * dx + dz * dz > maxDistance * maxDistance;
+            if (!campingHigh && !campingFar) continue;
+            cast = true;
+            BlockPos ground = findGround(world, player.getBlockPos(), event.center).up();
+            spawnLightning(world, ground);
+            for (int i = 0; i < 10; i++) {
+                double angle = Math.PI * 2.0 * i / 10.0;
+                BlockPos pos = ground.add((int) Math.round(Math.cos(angle) * 2.8), 0, (int) Math.round(Math.sin(angle) * 2.8));
+                BlockPos safe = findGround(world, pos, event.center);
+                world.spawnEntity(new EvokerFangsEntity(world, safe.getX() + 0.5, safe.getY() + 0.05, safe.getZ() + 0.5, (float) angle, 8, boss));
+            }
+        }
+        return cast;
+    }
+
+    private void castFangWave(ServerWorld world, EventTrial event, ZombieEntity boss, int rings) {
+        for (int ring = 1; ring <= rings; ring++) {
+            int points = 10 + ring * 4;
+            double radius = 3.0 + ring * 2.4;
+            for (int i = 0; i < points; i++) {
+                double angle = Math.PI * 2.0 * i / points + ring * 0.18;
+                BlockPos pos = boss.getBlockPos().add((int) Math.round(Math.cos(angle) * radius), 0, (int) Math.round(Math.sin(angle) * radius));
+                BlockPos safe = findGround(world, pos, event.center);
+                world.spawnParticles(ParticleTypes.SCULK_SOUL, safe.getX() + 0.5, safe.getY() + 0.1, safe.getZ() + 0.5, 6, 0.25, 0.04, 0.25, 0.02);
+                world.spawnEntity(new EvokerFangsEntity(world, safe.getX() + 0.5, safe.getY() + 0.05, safe.getZ() + 0.5, (float) angle, ring * 5, boss));
+            }
+        }
+        world.playSound(null, boss.getBlockPos(), SoundEvents.ENTITY_EVOKER_CAST_SPELL, SoundCategory.HOSTILE, 1.0f, 0.8f);
+    }
+
+    private void castFangLine(ServerWorld world, ZombieEntity boss, Vec3d from, Vec3d to, int steps) {
+        Vec3d delta = to.subtract(from);
+        double length = Math.max(0.001, Math.sqrt(delta.x * delta.x + delta.z * delta.z));
+        Vec3d dir = new Vec3d(delta.x / length, 0.0, delta.z / length);
+        float yaw = (float) Math.atan2(dir.z, dir.x);
+        for (int i = 2; i <= steps; i++) {
+            Vec3d point = from.add(dir.multiply(i * 1.65));
+            BlockPos safe = findGround(world, BlockPos.ofFloored(point), boss.getBlockPos());
+            world.spawnParticles(ParticleTypes.SCULK_SOUL, safe.getX() + 0.5, safe.getY() + 0.1, safe.getZ() + 0.5, 4, 0.22, 0.04, 0.22, 0.02);
+            world.spawnEntity(new EvokerFangsEntity(world, safe.getX() + 0.5, safe.getY() + 0.05, safe.getZ() + 0.5, yaw, i * 2, boss));
+        }
+    }
+
+    private void castFireCone(ServerWorld world, EventTrial event, ZombieEntity boss, boolean phaseTwo) {
+        ServerPlayerEntity target = findNearestParticipant(world, event, boss.getPos());
+        Vec3d direction = target == null ? boss.getRotationVec(1.0f) : target.getPos().subtract(boss.getPos()).normalize();
+        double range = phaseTwo ? 16.0 : 12.0;
+        for (int step = 2; step <= range; step++) {
+            double width = 0.35 + step * 0.22;
+            Vec3d center = boss.getPos().add(direction.multiply(step));
+            for (int side = -2; side <= 2; side++) {
+                Vec3d sideVec = new Vec3d(-direction.z, 0.0, direction.x).multiply(side * width);
+                Vec3d pos = center.add(sideVec);
+                world.spawnParticles(ParticleTypes.FLAME, pos.x, boss.getY() + 0.35, pos.z, 3, 0.15, 0.08, 0.15, 0.02);
+                world.spawnParticles(ParticleTypes.SOUL_FIRE_FLAME, pos.x, boss.getY() + 0.55, pos.z, phaseTwo ? 2 : 1, 0.1, 0.08, 0.1, 0.02);
+            }
+        }
+        for (UUID uuid : event.participants) {
+            ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(uuid);
+            if (player == null || player.getWorld() != world) continue;
+            Vec3d toPlayer = player.getPos().subtract(boss.getPos());
+            double horizontal = Math.sqrt(toPlayer.x * toPlayer.x + toPlayer.z * toPlayer.z);
+            if (horizontal > range || horizontal < 0.1) continue;
+            Vec3d normalized = new Vec3d(toPlayer.x / horizontal, 0.0, toPlayer.z / horizontal);
+            if (normalized.dotProduct(new Vec3d(direction.x, 0.0, direction.z).normalize()) < 0.58) continue;
+            player.setOnFireFor(phaseTwo ? 4 : 2);
+            player.damage(world.getDamageSources().onFire(), phaseTwo ? 5.0f : 3.0f);
+            player.addVelocity(normalized.x * 0.35, 0.12, normalized.z * 0.35);
+            player.velocityModified = true;
+        }
+        world.playSound(null, boss.getBlockPos(), SoundEvents.ENTITY_BLAZE_SHOOT, SoundCategory.HOSTILE, 1.0f, phaseTwo ? 0.55f : 0.75f);
+    }
+
+    private void castFireRing(ServerWorld world, EventTrial event, ZombieEntity boss, double radius) {
+        for (int i = 0; i < 48; i++) {
+            double angle = Math.PI * 2.0 * i / 48.0;
+            double x = boss.getX() + Math.cos(angle) * radius;
+            double z = boss.getZ() + Math.sin(angle) * radius;
+            world.spawnParticles(ParticleTypes.FLAME, x, boss.getY() + 0.25, z, 3, 0.08, 0.05, 0.08, 0.02);
+            if (i % 3 == 0) {
+                world.spawnParticles(ParticleTypes.LAVA, x, boss.getY() + 0.2, z, 1, 0.05, 0.02, 0.05, 0.01);
+            }
+        }
+        for (UUID uuid : event.participants) {
+            ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(uuid);
+            if (player == null || player.getWorld() != world) continue;
+            double distance = Math.sqrt(player.squaredDistanceTo(boss));
+            if (distance < radius - 1.6 || distance > radius + 1.8) continue;
+            player.damage(world.getDamageSources().inFire(), 4.0f);
+            Vec3d push = player.getPos().subtract(boss.getPos()).normalize();
+            player.addVelocity(push.x * 0.45, 0.16, push.z * 0.45);
+            player.velocityModified = true;
+        }
+        world.playSound(null, boss.getBlockPos(), SoundEvents.ITEM_FIRECHARGE_USE, SoundCategory.HOSTILE, 1.0f, 0.7f);
     }
 
     private void castFangs(ServerWorld world, EventTrial event, boolean phaseTwo) {
@@ -624,6 +828,8 @@ public class EventTrialManager {
 
     private void restoreAndReturn(ServerPlayerEntity player) {
         resetIntroPlayerState(player);
+        TrialCinematicNetworking.sendStop(player);
+        player.sendMessage(Text.empty(), true);
         restoreInventory(player);
         mod.getDataManager().setTrialState(player.getUuid(), ReviveTrialManager.STATE_ALIVE);
         mod.getLivesManager().restoreAfterRevive(player);
@@ -762,7 +968,7 @@ public class EventTrialManager {
             return;
         }
         if (mob instanceof SkeletonEntity || mob instanceof StrayEntity) {
-            mob.equipStack(EquipmentSlot.MAINHAND, enchantedItem(Items.BOW, Enchantments.POWER, Math.max(1, Math.min(2, wave / 2))));
+            mob.equipStack(EquipmentSlot.MAINHAND, enchantedItem(Items.BOW, Enchantments.POWER, Math.max(1, Math.min(3, wave / 2 + 1))));
             if (wave >= 3) mob.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.CHAINMAIL_HELMET));
             return;
         }
@@ -795,7 +1001,7 @@ public class EventTrialManager {
             return;
         }
         if (mob instanceof SkeletonEntity || mob instanceof StrayEntity) {
-            mob.equipStack(EquipmentSlot.MAINHAND, enchantedItem(Items.BOW, Enchantments.POWER, phaseTwo ? 2 : 1));
+            mob.equipStack(EquipmentSlot.MAINHAND, enchantedItem(Items.BOW, Enchantments.POWER, phaseTwo ? 3 : 2));
             mob.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.CHAINMAIL_HELMET));
             return;
         }
@@ -803,6 +1009,31 @@ public class EventTrialManager {
             witherSkeleton.equipStack(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
             setAttr(witherSkeleton, EntityAttributes.GENERIC_MAX_HEALTH, phaseTwo ? 34.0 : 26.0);
             witherSkeleton.setHealth(witherSkeleton.getMaxHealth());
+        }
+    }
+
+    private void boostEventMobStats(MobEntity mob, int wave, boolean bossMinion) {
+        double healthBonus = (bossMinion ? 10.0 : 5.0) + wave * (bossMinion ? 4.0 : 3.0);
+        double damageBonus = 1.0 + wave * (bossMinion ? 0.75 : 0.55);
+
+        var health = mob.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
+        if (health != null) {
+            health.setBaseValue(Math.min(90.0, health.getBaseValue() + healthBonus));
+            mob.setHealth(mob.getMaxHealth());
+        }
+        var damage = mob.getAttributeInstance(EntityAttributes.GENERIC_ATTACK_DAMAGE);
+        if (damage != null) {
+            damage.setBaseValue(damage.getBaseValue() + damageBonus);
+        }
+        var armor = mob.getAttributeInstance(EntityAttributes.GENERIC_ARMOR);
+        if (armor != null && wave >= 3) {
+            armor.setBaseValue(Math.min(12.0, armor.getBaseValue() + wave * 0.8));
+        }
+        if (wave >= 3) {
+            mob.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 20 * 8, bossMinion ? 1 : 0, false, true));
+        }
+        if (wave >= 5 || bossMinion) {
+            mob.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, 20 * 10, 0, false, true));
         }
     }
 
@@ -865,6 +1096,10 @@ public class EventTrialManager {
         buildRitualObelisks(world, center, radius);
         buildOuterCrystals(world, center, radius);
         buildLightPylons(world, center, radius);
+        buildBrokenArches(world, center, radius);
+        buildLowRuins(world, center, radius);
+        buildCorruptedVeins(world, center, radius);
+        buildMinorAltars(world, center, radius);
         buildCover(world, center, radius);
         buildBarrierWall(world, center, radius);
     }
@@ -1011,6 +1246,83 @@ public class EventTrialManager {
         }
     }
 
+    private void buildBrokenArches(ServerWorld world, BlockPos center, int radius) {
+        int archRadius = Math.min(radius - 30, 38);
+        for (int i = 0; i < 8; i++) {
+            double angle = Math.PI * 2.0 * i / 8.0 + Math.PI / 8.0;
+            BlockPos base = center.add((int) Math.round(Math.cos(angle) * archRadius), 2, (int) Math.round(Math.sin(angle) * archRadius));
+            boolean alongX = Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle));
+            for (int side = -1; side <= 1; side += 2) {
+                for (int y = 0; y <= 4; y++) {
+                    BlockPos pillar = alongX ? base.add(side * 3, y, 0) : base.add(0, y, side * 3);
+                    world.setBlockState(pillar, (y % 2 == 0 ? Blocks.END_STONE_BRICKS : Blocks.PURPUR_PILLAR).getDefaultState());
+                }
+            }
+            for (int w = -2; w <= 2; w++) {
+                if (i % 2 == 0 && Math.abs(w) == 2) continue;
+                BlockPos top = alongX ? base.add(w, 5, 0) : base.add(0, 5, w);
+                world.setBlockState(top, Blocks.PURPUR_BLOCK.getDefaultState());
+            }
+            world.setBlockState(base, Blocks.CRYING_OBSIDIAN.getDefaultState());
+        }
+    }
+
+    private void buildLowRuins(ServerWorld world, BlockPos center, int radius) {
+        int[][] points = {
+            {16, 34}, {-16, 34}, {16, -34}, {-16, -34},
+            {42, 16}, {-42, 16}, {42, -16}, {-42, -16},
+            {30, 30}, {-30, 30}, {30, -30}, {-30, -30}
+        };
+        for (int i = 0; i < points.length; i++) {
+            BlockPos base = center.add(points[i][0], 2, points[i][1]);
+            boolean alongX = i % 2 == 0;
+            for (int l = -5; l <= 5; l++) {
+                if (Math.abs(l) <= 1) continue;
+                int height = 1 + Math.floorMod(i + l, 3);
+                for (int y = 0; y < height; y++) {
+                    BlockPos pos = alongX ? base.add(l, y, -2) : base.add(-2, y, l);
+                    world.setBlockState(pos, (y == height - 1 ? Blocks.END_STONE_BRICKS : Blocks.OBSIDIAN).getDefaultState());
+                }
+            }
+            world.setBlockState(base.add(0, 0, 0), Blocks.PURPUR_BLOCK.getDefaultState());
+            world.setBlockState(base.add(1, 0, 1), Blocks.CRYING_OBSIDIAN.getDefaultState());
+        }
+    }
+
+    private void buildCorruptedVeins(ServerWorld world, BlockPos center, int radius) {
+        for (int line = 0; line < 14; line++) {
+            double angle = Math.PI * 2.0 * line / 14.0;
+            int start = 18 + (line % 3) * 4;
+            int end = Math.min(radius - 12, start + 24);
+            for (int d = start; d < end; d += 3) {
+                int x = (int) Math.round(Math.cos(angle) * d + Math.sin(angle) * ((d + line) % 5 - 2));
+                int z = (int) Math.round(Math.sin(angle) * d - Math.cos(angle) * ((d + line) % 5 - 2));
+                BlockPos pos = center.add(x, 2, z);
+                if (x * x + z * z > (radius - 8) * (radius - 8)) continue;
+                world.setBlockState(pos, (d % 2 == 0 ? Blocks.CRYING_OBSIDIAN : Blocks.OBSIDIAN).getDefaultState());
+                if (d % 9 == 0) {
+                    world.setBlockState(pos.up(), Blocks.END_ROD.getDefaultState());
+                }
+            }
+        }
+    }
+
+    private void buildMinorAltars(ServerWorld world, BlockPos center, int radius) {
+        int altarRadius = Math.min(radius - 24, 52);
+        for (int i = 0; i < 10; i++) {
+            double angle = Math.PI * 2.0 * i / 10.0 + Math.PI / 10.0;
+            BlockPos base = center.add((int) Math.round(Math.cos(angle) * altarRadius), 2, (int) Math.round(Math.sin(angle) * altarRadius));
+            for (int dx = -2; dx <= 2; dx++) {
+                for (int dz = -2; dz <= 2; dz++) {
+                    if (Math.abs(dx) + Math.abs(dz) > 3) continue;
+                    world.setBlockState(base.add(dx, 0, dz), (Math.abs(dx) + Math.abs(dz) == 3 ? Blocks.OBSIDIAN : Blocks.PURPUR_BLOCK).getDefaultState());
+                }
+            }
+            world.setBlockState(base.up(), Blocks.CRYING_OBSIDIAN.getDefaultState());
+            world.setBlockState(base.up(2), Blocks.END_ROD.getDefaultState());
+        }
+    }
+
     private void buildBarrierWall(ServerWorld world, BlockPos center, int radius) {
         int barrierRadius = radius + 3;
         for (int dx = -barrierRadius; dx <= barrierRadius; dx++) {
@@ -1039,6 +1351,15 @@ public class EventTrialManager {
     private void cleanupEvent(MinecraftServer server, EventTrial event) {
         ServerWorld world = getEventWorld(server);
         event.bossBar.clearPlayers();
+        event.bossBar.setVisible(false);
+        for (UUID uuid : new HashSet<>(event.participants)) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
+            if (player != null) {
+                resetIntroPlayerState(player);
+                TrialCinematicNetworking.sendStop(player);
+                player.sendMessage(Text.empty(), true);
+            }
+        }
         discardIntroActors(world, event);
         discardMobs(world, event.mobs);
         Box box = new Box(event.center).expand(ModConfig.get().eventTrial.radioArena + 20, 40, ModConfig.get().eventTrial.radioArena + 20);
@@ -1130,6 +1451,45 @@ public class EventTrialManager {
         return center.add(0, 5, 0);
     }
 
+    private BlockPos findArenaSpawn(ServerWorld world, BlockPos preferred, BlockPos center) {
+        int arenaFeetY = center.getY() + 3;
+        for (int r = 0; r <= 16; r++) {
+            for (int dx = -r; dx <= r; dx++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    if (Math.abs(dx) != r && Math.abs(dz) != r) continue;
+                    BlockPos feet = new BlockPos(preferred.getX() + dx, arenaFeetY, preferred.getZ() + dz);
+                    if (isArenaFloorSpawnSafe(world, feet, center)) return feet;
+                }
+            }
+        }
+        for (int r = 4; r <= 24; r += 4) {
+            for (int i = 0; i < 16; i++) {
+                double angle = Math.PI * 2.0 * i / 16.0;
+                BlockPos feet = new BlockPos(
+                    center.getX() + (int) Math.round(Math.cos(angle) * r),
+                    arenaFeetY,
+                    center.getZ() + (int) Math.round(Math.sin(angle) * r)
+                );
+                if (isArenaFloorSpawnSafe(world, feet, center)) return feet;
+            }
+        }
+        return center.add(0, 3, 0);
+    }
+
+    private boolean isArenaFloorSpawnSafe(ServerWorld world, BlockPos feet, BlockPos center) {
+        double max = ModConfig.get().eventTrial.radioArena - 8.0;
+        double dx = feet.getX() - center.getX();
+        double dz = feet.getZ() - center.getZ();
+        if (dx * dx + dz * dz > max * max) return false;
+        if (feet.getY() < center.getY() + 2 || feet.getY() > center.getY() + 4) return false;
+        return world.getBlockState(feet).isAir()
+            && world.getBlockState(feet.up()).isAir()
+            && world.getBlockState(feet.down()).isSolidBlock(world, feet.down())
+            && !world.getBlockState(feet.down()).isOf(Blocks.BARRIER)
+            && !world.getBlockState(feet.down()).isOf(Blocks.LADDER)
+            && world.getBlockState(feet.up(2)).isAir();
+    }
+
     private BlockPos findGround(ServerWorld world, BlockPos pos, BlockPos center) {
         for (int y = center.getY() + 20; y >= center.getY() - 8; y--) {
             BlockPos ground = new BlockPos(pos.getX(), y, pos.getZ());
@@ -1155,7 +1515,7 @@ public class EventTrialManager {
             double dz = entity.getZ() - (event.center.getZ() + 0.5);
             double max = ModConfig.get().eventTrial.radioArena + 6.0;
             if (dx * dx + dz * dz <= max * max && entity.getY() > event.center.getY() - 8) continue;
-            BlockPos spawn = findSafeSpawn(world, event.center.add(0, 3, 0), event.center);
+            BlockPos spawn = findArenaSpawn(world, event.center.add(0, 3, 0), event.center);
             entity.refreshPositionAndAngles(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5, entity.getYaw(), entity.getPitch());
             entity.setVelocity(0.0, 0.0, 0.0);
         }
@@ -1174,10 +1534,50 @@ public class EventTrialManager {
         return alive;
     }
 
+    private void markLastAliveMobs(ServerWorld world, EventTrial event, int alive) {
+        if (alive > 2 || event.wave >= ModConfig.get().eventTrial.oleadas) return;
+        for (UUID uuid : event.mobs) {
+            Entity entity = world.getEntity(uuid);
+            if (!(entity instanceof MobEntity mob) || !mob.isAlive()) continue;
+            mob.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 80, 0, false, true));
+            if (world.getTime() % 10L == 0L) {
+                world.spawnParticles(ParticleTypes.ELECTRIC_SPARK,
+                    mob.getX(), mob.getY() + mob.getHeight() + 0.35, mob.getZ(),
+                    12, 0.35, 0.25, 0.35, 0.04);
+                world.spawnParticles(ParticleTypes.END_ROD,
+                    mob.getX(), mob.getY() + mob.getHeight() * 0.6, mob.getZ(),
+                    8, 0.25, 0.35, 0.25, 0.02);
+            }
+        }
+        if (world.getTime() % 40L == 0L) {
+            for (UUID uuid : event.participants) {
+                ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(uuid);
+                if (player != null) {
+                    player.sendMessage(Text.literal("\u00A7eUltimo enemigo marcado."), true);
+                }
+            }
+        }
+    }
+
     private ZombieEntity getBoss(ServerWorld world, EventTrial event) {
         if (event.bossId == null) return null;
         Entity entity = world.getEntity(event.bossId);
         return entity instanceof ZombieEntity zombie ? zombie : null;
+    }
+
+    private ServerPlayerEntity findNearestParticipant(ServerWorld world, EventTrial event, Vec3d pos) {
+        ServerPlayerEntity nearest = null;
+        double best = Double.MAX_VALUE;
+        for (UUID uuid : event.participants) {
+            ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(uuid);
+            if (player == null || player.getWorld() != world) continue;
+            double distance = player.getPos().squaredDistanceTo(pos);
+            if (distance < best) {
+                best = distance;
+                nearest = player;
+            }
+        }
+        return nearest;
     }
 
     private void targetNearestParticipant(MobEntity mob) {
@@ -1222,6 +1622,16 @@ public class EventTrialManager {
 
     private void spawnAmbientEffects(ServerWorld world, BlockPos center) {
         world.spawnParticles(ParticleTypes.PORTAL, center.getX() + 0.5, center.getY() + 6.0, center.getZ() + 0.5, 36, 6.0, 1.0, 6.0, 0.04);
+        int radius = Math.min(ModConfig.get().eventTrial.radioArena - 26, 50);
+        for (int i = 0; i < 6; i++) {
+            double angle = Math.PI * 2.0 * i / 6.0 + world.getTime() * 0.01;
+            double x = center.getX() + 0.5 + Math.cos(angle) * radius;
+            double z = center.getZ() + 0.5 + Math.sin(angle) * radius;
+            world.spawnParticles(ParticleTypes.REVERSE_PORTAL, x, center.getY() + 4.0, z, 8, 0.4, 0.5, 0.4, 0.02);
+            if (i % 2 == 0) {
+                world.spawnParticles(ParticleTypes.SOUL_FIRE_FLAME, x, center.getY() + 3.2, z, 3, 0.18, 0.15, 0.18, 0.01);
+            }
+        }
     }
 
     private void spawnLightning(ServerWorld world, BlockPos pos) {
