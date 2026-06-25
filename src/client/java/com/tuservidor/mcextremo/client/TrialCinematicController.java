@@ -141,13 +141,19 @@ public final class TrialCinematicController {
     }
 
     private static void lookAtEventSky(MinecraftClient client, EventIntro intro) {
-        float progress = 1.0f - (intro.ticksRemaining() / (float) intro.totalTicks());
-        float targetYaw = guidedYaw + 0.85f + progress * 0.35f;
-        float targetPitch = -58.0f - MathHelper.sin(progress * MathHelper.PI) * 8.0f;
+        Vec3d target = intro.center().add(0.0, 10.0, 0.0);
+        Vec3d eye = client.player.getEyePos();
+        Vec3d delta = target.subtract(eye);
+        double horizontal = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
+        if (horizontal < 0.001) return;
 
-        guidedYaw += MathHelper.wrapDegrees(targetYaw - guidedYaw) * 0.36f;
-        guidedPitch += (targetPitch - guidedPitch) * 0.24f;
-        guidedPitch = MathHelper.clamp(guidedPitch, -68.0f, -48.0f);
+        float targetYaw = (float) (MathHelper.atan2(delta.z, delta.x) * 180.0F / Math.PI) - 90.0F;
+        float targetPitch = (float) (-(MathHelper.atan2(delta.y, horizontal) * 180.0F / Math.PI));
+        targetPitch = MathHelper.clamp(targetPitch, -34.0f, 8.0f);
+
+        guidedYaw += MathHelper.wrapDegrees(targetYaw - guidedYaw) * 0.45f;
+        guidedPitch += (targetPitch - guidedPitch) * 0.38f;
+        guidedPitch = MathHelper.clamp(guidedPitch, -34.0f, 8.0f);
 
         client.player.prevYaw = guidedYaw;
         client.player.prevPitch = guidedPitch;

@@ -116,8 +116,14 @@ public class MCExtremo implements ModInitializer {
 
     private void registerPvpCancellation() {
         ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, damageSource, amount) -> {
+            var attacker = damageSource.getAttacker();
+            var source = damageSource.getSource();
+            if (entity.getCommandTags().contains(EventTrialManager.MOB_TAG)
+                && ((attacker != null && attacker.getCommandTags().contains(EventTrialManager.MOB_TAG))
+                    || (source != null && source.getCommandTags().contains(EventTrialManager.MOB_TAG)))) {
+                return false;
+            }
             if (entity instanceof ServerPlayerEntity victim) {
-                var attacker = damageSource.getAttacker();
                 if (attacker instanceof ServerPlayerEntity && !pvpScheduler.isPvpEnabled()) {
                     return false;
                 }

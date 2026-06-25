@@ -19,7 +19,6 @@ import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.decoration.ArmorStandEntity;
 import net.minecraft.entity.mob.CaveSpiderEntity;
 import net.minecraft.entity.mob.EndermanEntity;
-import net.minecraft.entity.mob.EndermiteEntity;
 import net.minecraft.entity.mob.EvokerFangsEntity;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.mob.HuskEntity;
@@ -69,6 +68,7 @@ public class EventTrialManager {
     private EventTrial activeEvent;
 
     private enum Phase {
+        GENERATING,
         INTRO,
         PREPARATION,
         COMBAT,
@@ -78,6 +78,8 @@ public class EventTrialManager {
     private static class EventTrial {
         ServerBossBar bossBar;
         BlockPos center;
+        ArenaBuildTask arenaBuild;
+        Set<UUID> pendingPlayers = new HashSet<>();
         Set<UUID> participants = new HashSet<>();
         Set<UUID> mobs = new HashSet<>();
         Map<UUID, BlockPos> landingPositions = new HashMap<>();
@@ -98,6 +100,22 @@ public class EventTrialManager {
         int comboCooldown;
         int auraTicks;
         boolean bossPhaseTwo;
+    }
+
+    private static class ArenaBuildTask {
+        final BlockPos center;
+        final int radius;
+        int stage;
+        int dx;
+        int dz;
+        boolean structuresBuilt;
+
+        ArenaBuildTask(BlockPos center, int radius) {
+            this.center = center;
+            this.radius = radius;
+            this.dx = -radius - 10;
+            this.dz = -radius - 10;
+        }
     }
 
     public EventTrialManager(MCExtremo mod) {
@@ -142,50 +160,33 @@ public class EventTrialManager {
         if (world == null) world = server.getOverworld();
 
         BlockPos center = getEventCenter(config);
-        generateArena(world, center, config.radioArena);
 
         EventTrial event = new EventTrial();
         event.center = center;
         event.initialPlayers = players.size();
         event.tokens = players.size() * config.tokensPorJugador;
         event.wave = 0;
-        event.actionCooldown = Math.max(20, config.preparacionSegundos * 20);
+        event.actionCooldown = 0;
         event.introTicks = config.introActivada ? config.introDuracionTicks : 0;
-        event.phase = config.introActivada ? Phase.INTRO : Phase.PREPARATION;
+        event.phase = Phase.GENERATING;
+        event.arenaBuild = new ArenaBuildTask(center, config.radioArena);
         event.bossCooldown = 12 * 20;
         event.fangsCooldown = 10 * 20;
         event.fireCooldown = 8 * 20;
         event.comboCooldown = 16 * 20;
         event.bossBar = new ServerBossBar(
-            TextUtil.literal("&5Event Trial &7- Preparacion"),
+            TextUtil.literal("&5Event Trial &7- Generando arena"),
             BossBar.Color.PURPLE,
             BossBar.Style.NOTCHED_20
         );
         event.bossBar.setPercent(1.0f);
+        for (ServerPlayerEntity player : players) {
+            event.pendingPlayers.add(player.getUuid());
+            event.bossBar.addPlayer(player);
+        }
         activeEvent = event;
 
-        for (int i = 0; i < players.size(); i++) {
-            ServerPlayerEntity player = players.get(i);
-            BlockPos landing = getLandingPosition(world, center, i, players.size());
-            Vec3d cameraPos = getIntroCameraPosition(center, i, players.size());
-            event.participants.add(player.getUuid());
-            event.landingPositions.put(player.getUuid(), landing);
-            event.cameraPositions.put(player.getUuid(), cameraPos);
-            event.bossBar.addPlayer(player);
-            saveAndHideInventory(player);
-            giveEventKit(player);
-            mod.getDataManager().setTrialState(player.getUuid(), STATE_EVENT_TRIAL);
-            player.changeGameMode(GameMode.SURVIVAL);
-            if (config.introActivada) {
-                prepareIntroViewer(player, world, cameraPos, config);
-                createIntroAvatar(world, event, player, landing, config);
-                TrialCinematicNetworking.sendEventIntro(player, Vec3d.ofCenter(center), config.introDuracionTicks);
-            } else {
-                teleportToLanding(player, world, landing);
-            }
-        }
-
-        broadcast(server, "&5&lEVENT TRIAL &7- &e" + players.size() + " jugador(es) entraron al evento.");
+        broadcast(server, "&5&lEVENT TRIAL &7- &eGenerando arena para " + players.size() + " jugador(es).");
         return true;
     }
 
@@ -200,6 +201,11 @@ public class EventTrialManager {
         EventTrial event = activeEvent;
         ServerWorld world = server.getWorld(World.END);
         if (world == null) world = server.getOverworld();
+
+        if (event.phase == Phase.GENERATING) {
+            tickArenaGeneration(server, world, event);
+            return;
+        }
 
         event.participants.removeIf(uuid -> server.getPlayerManager().getPlayer(uuid) == null);
         if (event.participants.isEmpty()) {
@@ -271,8 +277,8 @@ public class EventTrialManager {
         player.getHungerManager().setFoodLevel(20);
         player.getHungerManager().setSaturationLevel(10.0f);
         if (event.phase == Phase.INTRO) {
-            Vec3d cameraPos = event.cameraPositions.getOrDefault(player.getUuid(), Vec3d.ofCenter(event.center).add(0.0, 8.0, 0.0));
-            prepareIntroViewer(player, getEventWorld(player.getServer()), cameraPos, ModConfig.get().eventTrial);
+            Vec3d cameraPos = event.cameraPositions.getOrDefault(player.getUuid(), getIntroCameraPosition(event.center, 0, 1));
+            prepareIntroViewer(player, getEventWorld(player.getServer()), cameraPos, event.center, ModConfig.get().eventTrial);
         } else {
             teleportToArena(player, getEventWorld(player.getServer()), event.center);
         }
@@ -323,6 +329,116 @@ public class EventTrialManager {
         return players;
     }
 
+    private void tickArenaGeneration(MinecraftServer server, ServerWorld world, EventTrial event) {
+        event.pendingPlayers.removeIf(uuid -> server.getPlayerManager().getPlayer(uuid) == null);
+        if (event.pendingPlayers.isEmpty()) {
+            cleanupEvent(server, event);
+            activeEvent = null;
+            return;
+        }
+
+        boolean complete = processArenaBuild(world, event.arenaBuild, 520);
+        updateGenerationBar(event);
+        if (!complete) return;
+
+        List<ServerPlayerEntity> players = new ArrayList<>();
+        for (UUID uuid : event.pendingPlayers) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
+            if (player != null) players.add(player);
+        }
+        if (players.isEmpty()) {
+            cleanupEvent(server, event);
+            activeEvent = null;
+            return;
+        }
+
+        ModConfig.EventTrial config = ModConfig.get().eventTrial;
+        event.initialPlayers = players.size();
+        event.tokens = players.size() * config.tokensPorJugador;
+        event.actionCooldown = Math.max(20, config.preparacionSegundos * 20);
+        event.introTicks = config.introActivada ? config.introDuracionTicks : 0;
+        event.phase = config.introActivada ? Phase.INTRO : Phase.PREPARATION;
+        event.pendingPlayers.clear();
+        event.bossBar.setName(TextUtil.literal(config.introActivada ? "&5Event Trial &7- Entrada" : "&5Event Trial &7- Preparacion"));
+        event.bossBar.setPercent(1.0f);
+
+        for (int i = 0; i < players.size(); i++) {
+            ServerPlayerEntity player = players.get(i);
+            BlockPos landing = getLandingPosition(world, event.center, i, players.size());
+            Vec3d cameraPos = getIntroCameraPosition(event.center, i, players.size());
+            event.participants.add(player.getUuid());
+            event.landingPositions.put(player.getUuid(), landing);
+            event.cameraPositions.put(player.getUuid(), cameraPos);
+            saveAndHideInventory(player);
+            giveEventKit(player);
+            mod.getDataManager().setTrialState(player.getUuid(), STATE_EVENT_TRIAL);
+            player.changeGameMode(GameMode.SURVIVAL);
+            if (config.introActivada) {
+                prepareIntroViewer(player, world, cameraPos, event.center, config);
+                createIntroAvatar(world, event, player, landing, config);
+                TrialCinematicNetworking.sendEventIntro(player, Vec3d.ofCenter(event.center), config.introDuracionTicks);
+            } else {
+                teleportToLanding(player, world, landing);
+            }
+        }
+
+        broadcast(server, "&5&lEVENT TRIAL &7- &e" + players.size() + " jugador(es) entraron al evento.");
+    }
+
+    private boolean processArenaBuild(ServerWorld world, ArenaBuildTask task, int columnBudget) {
+        if (task == null) return true;
+        int processed = 0;
+        while (processed < columnBudget && task.stage < 2) {
+            if (task.stage == 0) {
+                clearArenaColumn(world, task.center, task.radius, task.dx, task.dz);
+                if (advanceArenaCursor(task, task.radius + 10)) {
+                    task.stage = 1;
+                    task.dx = -task.radius;
+                    task.dz = -task.radius;
+                }
+            } else if (task.stage == 1) {
+                buildArenaBaseColumn(world, task.center, task.radius, task.dx, task.dz);
+                if (advanceArenaCursor(task, task.radius)) {
+                    task.stage = 2;
+                }
+            }
+            processed++;
+        }
+        if (task.stage < 2) return false;
+        if (!task.structuresBuilt) {
+            buildArenaStructures(world, task.center, task.radius);
+            task.structuresBuilt = true;
+        }
+        return true;
+    }
+
+    private boolean advanceArenaCursor(ArenaBuildTask task, int limit) {
+        task.dz++;
+        if (task.dz <= limit) return false;
+        task.dz = -limit;
+        task.dx++;
+        return task.dx > limit;
+    }
+
+    private void updateGenerationBar(EventTrial event) {
+        if (event.arenaBuild == null) return;
+        int radius = event.arenaBuild.radius;
+        int clearSide = radius + 10;
+        int clearTotal = (clearSide * 2 + 1) * (clearSide * 2 + 1);
+        int baseTotal = (radius * 2 + 1) * (radius * 2 + 1);
+        int done;
+        if (event.arenaBuild.stage == 0) {
+            done = (event.arenaBuild.dx + clearSide) * (clearSide * 2 + 1) + (event.arenaBuild.dz + clearSide);
+        } else if (event.arenaBuild.stage == 1) {
+            done = clearTotal + (event.arenaBuild.dx + radius) * (radius * 2 + 1) + (event.arenaBuild.dz + radius);
+        } else {
+            done = clearTotal + baseTotal;
+        }
+        float percent = Math.max(0.03f, Math.min(1.0f, done / (float) (clearTotal + baseTotal)));
+        event.bossBar.setPercent(percent);
+        event.bossBar.setName(Text.literal("\u00A75Event Trial \u00A77| \u00A7fGenerando arena \u00A78- \u00A7e" + Math.round(percent * 100.0f) + "%"));
+    }
+
     private void tickIntro(MinecraftServer server, ServerWorld world, EventTrial event) {
         ModConfig.EventTrial config = ModConfig.get().eventTrial;
         int total = Math.max(1, config.introDuracionTicks);
@@ -339,7 +455,7 @@ public class EventTrialManager {
             if (player == null) continue;
             BlockPos landing = event.landingPositions.getOrDefault(uuid, event.center.add(0, 2, 0));
             Vec3d cameraPos = event.cameraPositions.getOrDefault(uuid, Vec3d.ofCenter(event.center).add(0.0, 8.0, 0.0));
-            prepareIntroViewer(player, world, cameraPos, config);
+            prepareIntroViewer(player, world, cameraPos, event.center, config);
 
             double y = landing.getY() + 1.0 + height;
             tickIntroAvatar(world, event, uuid, landing, y);
@@ -376,16 +492,13 @@ public class EventTrialManager {
     }
 
     private Vec3d getIntroCameraPosition(BlockPos center, int index, int totalPlayers) {
-        if (totalPlayers <= 1) {
-            return Vec3d.ofCenter(center).add(0.0, 8.0, 0.0);
-        }
-        double angle = (Math.PI * 2.0 * index) / totalPlayers;
-        double spread = 0.75;
-        return Vec3d.ofCenter(center).add(Math.cos(angle) * spread, 8.0, Math.sin(angle) * spread);
+        double spread = totalPlayers <= 1 ? 0.0 : (index - (totalPlayers - 1) / 2.0) * 1.4;
+        return Vec3d.ofCenter(center).add(spread, 15.0, -42.0);
     }
 
-    private void prepareIntroViewer(ServerPlayerEntity player, ServerWorld world, Vec3d cameraPos, ModConfig.EventTrial config) {
-        player.teleport(world, cameraPos.x, cameraPos.y, cameraPos.z, player.getYaw(), -58.0f);
+    private void prepareIntroViewer(ServerPlayerEntity player, ServerWorld world, Vec3d cameraPos, BlockPos center, ModConfig.EventTrial config) {
+        Vec3d target = Vec3d.ofCenter(center).add(0.0, 10.0, 0.0);
+        player.teleport(world, cameraPos.x, cameraPos.y, cameraPos.z, getLookYaw(cameraPos, target), getLookPitch(cameraPos, target));
         player.setVelocity(0.0, 0.0, 0.0);
         player.velocityModified = true;
         player.fallDistance = 0.0f;
@@ -398,6 +511,17 @@ public class EventTrialManager {
         player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOW_FALLING, config.introDuracionTicks + 40, 0, false, false));
         player.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, config.introDuracionTicks + 40, 4, false, false));
         player.addStatusEffect(new StatusEffectInstance(StatusEffects.INVISIBILITY, 12, 0, false, false));
+    }
+
+    private float getLookYaw(Vec3d from, Vec3d to) {
+        Vec3d delta = to.subtract(from);
+        return (float) (Math.atan2(delta.z, delta.x) * 180.0 / Math.PI) - 90.0f;
+    }
+
+    private float getLookPitch(Vec3d from, Vec3d to) {
+        Vec3d delta = to.subtract(from);
+        double horizontal = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
+        return (float) (-(Math.atan2(delta.y, horizontal) * 180.0 / Math.PI));
     }
 
     private void createIntroAvatar(ServerWorld world, EventTrial event, ServerPlayerEntity player, BlockPos landing, ModConfig.EventTrial config) {
@@ -907,8 +1031,8 @@ public class EventTrialManager {
     private MobEntity createWaveMob(ServerWorld world, int wave, int index) {
         int roll = Math.floorMod(index * 31 + wave * 17 + world.random.nextInt(100), 100);
         if (wave <= 1) {
-            if (roll < 16) return EntityType.SPIDER.create(world);
-            if (roll < 28) return EntityType.ENDERMITE.create(world);
+            if (roll < 22) return EntityType.SPIDER.create(world);
+            if (roll < 36) return EntityType.HUSK.create(world);
             return EntityType.ZOMBIE.create(world);
         }
         if (wave == 2) {
@@ -980,10 +1104,6 @@ public class EventTrialManager {
         }
         if (mob instanceof SpiderEntity || mob instanceof CaveSpiderEntity) {
             setAttr(mob, EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.28 + wave * 0.01);
-        }
-        if (mob instanceof EndermiteEntity endermite) {
-            setAttr(endermite, EntityAttributes.GENERIC_MAX_HEALTH, 10.0 + wave);
-            endermite.setHealth(endermite.getMaxHealth());
         }
     }
 
@@ -1063,21 +1183,37 @@ public class EventTrialManager {
         clearArena(world, center, radius);
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
-                double distance = Math.sqrt(dx * dx + dz * dz);
-                if (distance > radius) continue;
-                int thickness = Math.max(2, (int) Math.round(8 - distance / 14.0));
-                for (int dy = 0; dy < thickness; dy++) {
-                    world.setBlockState(center.add(dx, -dy, dz), Blocks.END_STONE.getDefaultState());
-                }
-                if (distance <= radius - 5) {
-                    world.setBlockState(center.add(dx, 1, dz),
-                        (Math.abs(dx * 13 + dz * 7) % 11 == 0 ? Blocks.PURPUR_BLOCK : Blocks.END_STONE_BRICKS).getDefaultState());
-                }
-                if (distance > radius - 4) {
-                    world.setBlockState(center.add(dx, 1, dz), Blocks.END_STONE_BRICKS.getDefaultState());
-                }
+                buildArenaBaseColumn(world, center, radius, dx, dz);
             }
         }
+        buildArenaStructures(world, center, radius);
+    }
+
+    private void clearArenaColumn(ServerWorld world, BlockPos center, int radius, int dx, int dz) {
+        int r = radius + 10;
+        if (dx * dx + dz * dz > r * r) return;
+        for (int dy = -10; dy <= 28; dy++) {
+            world.setBlockState(center.add(dx, dy, dz), Blocks.AIR.getDefaultState());
+        }
+    }
+
+    private void buildArenaBaseColumn(ServerWorld world, BlockPos center, int radius, int dx, int dz) {
+        double distance = Math.sqrt(dx * dx + dz * dz);
+        if (distance > radius) return;
+        int thickness = Math.max(2, (int) Math.round(8 - distance / 14.0));
+        for (int dy = 0; dy < thickness; dy++) {
+            world.setBlockState(center.add(dx, -dy, dz), Blocks.END_STONE.getDefaultState());
+        }
+        if (distance <= radius - 5) {
+            world.setBlockState(center.add(dx, 1, dz),
+                (Math.abs(dx * 13 + dz * 7) % 11 == 0 ? Blocks.PURPUR_BLOCK : Blocks.END_STONE_BRICKS).getDefaultState());
+        }
+        if (distance > radius - 4) {
+            world.setBlockState(center.add(dx, 1, dz), Blocks.END_STONE_BRICKS.getDefaultState());
+        }
+    }
+
+    private void buildArenaStructures(ServerWorld world, BlockPos center, int radius) {
         buildCentralPlatform(world, center);
         buildRunicRings(world, center, radius);
         buildLandingPads(world, center, radius);
@@ -1511,6 +1647,9 @@ public class EventTrialManager {
         for (UUID uuid : new HashSet<>(event.mobs)) {
             Entity entity = world.getEntity(uuid);
             if (entity == null || !entity.isAlive()) continue;
+            if (entity instanceof MobEntity mob && !(mob.getTarget() instanceof ServerPlayerEntity)) {
+                targetNearestParticipant(mob);
+            }
             double dx = entity.getX() - (event.center.getX() + 0.5);
             double dz = entity.getZ() - (event.center.getZ() + 0.5);
             double max = ModConfig.get().eventTrial.radioArena + 6.0;
