@@ -7,7 +7,9 @@
     "PlayerManagerMixin",
     "ZombieAttributesMixin"
   ],
-  "client": [],
+  "client": [
+    "TitleScreenMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   }
