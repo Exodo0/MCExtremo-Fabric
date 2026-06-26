@@ -14,7 +14,11 @@ import net.minecraft.network.PacketByteBuf;
 import net.minecraft.text.Text;
 
 public class MCExtremoClient implements ClientModInitializer {
+    private static final int VERSION_HANDSHAKE_RETRY_TICKS = 200;
+
     private boolean blockedSingleplayer;
+    private int versionHandshakeTicks;
+    private boolean versionHandshakeSent;
 
     @Override
     public void onInitializeClient() {
@@ -22,12 +26,11 @@ public class MCExtremoClient implements ClientModInitializer {
         TrialCinematicClientNetworking.register();
         TrialCinematicController.register();
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
-            if (!ClientPlayNetworking.canSend(VersionNetworking.CLIENT_VERSION)) return;
-            PacketByteBuf buf = PacketByteBufs.create();
-            buf.writeString(UpdateChecker.currentVersion());
-            ClientPlayNetworking.send(VersionNetworking.CLIENT_VERSION, buf);
+            versionHandshakeTicks = VERSION_HANDSHAKE_RETRY_TICKS;
+            versionHandshakeSent = false;
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            trySendVersionHandshake();
             if (blockedSingleplayer || !client.isIntegratedServerRunning()) return;
             blockedSingleplayer = true;
             client.disconnect(new DisconnectedScreen(
@@ -37,5 +40,15 @@ public class MCExtremoClient implements ClientModInitializer {
             ));
         });
         MCExtremo.LOGGER.info("MCExtremo client initialized");
+    }
+
+    private void trySendVersionHandshake() {
+        if (versionHandshakeSent || versionHandshakeTicks <= 0) return;
+        versionHandshakeTicks--;
+        if (!ClientPlayNetworking.canSend(VersionNetworking.CLIENT_VERSION)) return;
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeString(UpdateChecker.currentVersion());
+        ClientPlayNetworking.send(VersionNetworking.CLIENT_VERSION, buf);
+        versionHandshakeSent = true;
     }
 }

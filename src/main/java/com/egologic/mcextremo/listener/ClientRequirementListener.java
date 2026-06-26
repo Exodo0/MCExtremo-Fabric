@@ -9,14 +9,13 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 
-import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class ClientRequirementListener {
-    private static final int CHECK_DELAY_TICKS = 60;
-    private static final Map<UUID, PendingCheck> pendingChecks = new HashMap<>();
+    private static final int CHECK_DELAY_TICKS = 200;
+    private static final Map<UUID, PendingCheck> pendingChecks = new ConcurrentHashMap<>();
 
     private record PendingCheck(ServerPlayerEntity player, int ticks, String clientVersion) {
         PendingCheck tick() {
@@ -41,12 +40,10 @@ public final class ClientRequirementListener {
             pendingChecks.remove(handler.getPlayer().getUuid()));
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            Iterator<Map.Entry<UUID, PendingCheck>> iterator = pendingChecks.entrySet().iterator();
-            while (iterator.hasNext()) {
-                Map.Entry<UUID, PendingCheck> entry = iterator.next();
+            for (Map.Entry<UUID, PendingCheck> entry : pendingChecks.entrySet()) {
                 PendingCheck check = entry.getValue().tick();
                 if (check.ticks() > 0) {
-                    entry.setValue(check);
+                    pendingChecks.put(entry.getKey(), check);
                     continue;
                 }
 
@@ -62,7 +59,7 @@ public final class ClientRequirementListener {
                         // isCompatible already disconnects with the exact reason.
                     }
                 }
-                iterator.remove();
+                pendingChecks.remove(entry.getKey());
             }
         });
     }
@@ -77,7 +74,7 @@ public final class ClientRequirementListener {
             pendingChecks.remove(player.getUuid());
             return;
         }
-        pendingChecks.put(player.getUuid(), check.withVersion(clientVersion));
+        pendingChecks.remove(player.getUuid());
     }
 
     private static boolean isCompatible(ServerPlayerEntity player, String clientVersion) {
