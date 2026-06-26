@@ -261,7 +261,7 @@ public class ModCommands {
 
     private static int comandoUpdate(ServerCommandSource source) {
         MCExtremo mod = MCExtremo.getInstance();
-        source.sendFeedback(() -> Text.literal("\u00A7eRevisando GitHub Releases..."), false);
+        source.sendFeedback(() -> Text.literal("\u00A7eRevisando GitHub Releases para la version del servidor..."), false);
         mod.getUpdateChecker().checkAsync(true).thenAccept(info ->
             source.getServer().execute(() -> mod.getUpdateChecker().sendStatus(source, info)));
         return 1;

@@ -10,6 +10,7 @@ import com.egologic.mcextremo.listener.SkillTreeListener;
 import com.egologic.mcextremo.listener.ZombieGoalListener;
 import com.egologic.mcextremo.manager.*;
 import com.egologic.mcextremo.network.SkillTreeNetworking;
+import com.egologic.mcextremo.network.VersionNetworking;
 import com.egologic.mcextremo.skilltree.SkillPassiveHandler;
 import com.egologic.mcextremo.skilltree.SkillTreeManager;
 import com.egologic.mcextremo.util.UpdateChecker;
@@ -114,6 +115,7 @@ public class MCExtremo implements ModInitializer {
         registerPvpCancellation();
         SkillPassiveHandler.register();
         SkillTreeNetworking.registerServer();
+        VersionNetworking.registerServer();
 
         ClientRequirementListener.register();
         DeathListener.register();

@@ -76,7 +76,7 @@ public final class UpdateChecker {
     public void notifyIfUpdateAvailable(ServerPlayerEntity player) {
         UpdateInfo info = cached;
         if (info == null || !info.updateAvailable() || !player.hasPermissionLevel(2)) return;
-        player.sendMessage(TextUtil.literal("&6MCExtremo &7tiene una actualizacion disponible: &ev" + info.latestVersion()), false);
+        player.sendMessage(TextUtil.literal("&6MCExtremo servidor &7tiene una actualizacion disponible: &ev" + info.latestVersion()), false);
         player.sendMessage(downloadMessage(info), false);
     }
 
@@ -86,10 +86,10 @@ public final class UpdateChecker {
             return;
         }
         if (!info.updateAvailable()) {
-            source.sendFeedback(() -> TextUtil.literal("&aMCExtremo esta actualizado. &7Version local: &e" + info.currentVersion()), false);
+            source.sendFeedback(() -> TextUtil.literal("&aMCExtremo del servidor esta actualizado. &7Version servidor: &e" + info.currentVersion()), false);
             return;
         }
-        source.sendFeedback(() -> TextUtil.literal("&6MCExtremo &7local: &e" + info.currentVersion() + " &7| latest: &av" + info.latestVersion()), false);
+        source.sendFeedback(() -> TextUtil.literal("&6MCExtremo servidor desactualizado &7| servidor: &e" + info.currentVersion() + " &7| latest: &av" + info.latestVersion()), false);
         source.sendFeedback(() -> downloadMessage(info), false);
     }
 
@@ -142,7 +142,7 @@ public final class UpdateChecker {
                 .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(info.downloadUrl()))));
     }
 
-    private String currentVersion() {
+    public static String currentVersion() {
         return FabricLoader.getInstance()
             .getModContainer(MCExtremo.MOD_ID)
             .map(container -> container.getMetadata().getVersion().getFriendlyString())
@@ -154,7 +154,7 @@ public final class UpdateChecker {
         return clean.startsWith("v") || clean.startsWith("V") ? clean.substring(1) : clean;
     }
 
-    private static int compareVersions(String left, String right) {
+    public static int compareVersions(String left, String right) {
         int[] a = numericParts(stripVersionPrefix(left));
         int[] b = numericParts(stripVersionPrefix(right));
         int length = Math.max(a.length, b.length);
