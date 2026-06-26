@@ -465,20 +465,20 @@ public class EventTrialManager {
         }
 
         if (--event.bossCooldown <= 0) {
-            spawnBossMinions(world, event, event.bossPhaseTwo ? 6 : 4);
-            event.bossCooldown = event.bossPhaseFour ? 7 * 20 : event.bossPhaseTwo ? 10 * 20 : 14 * 20;
+            spawnBossMinions(world, event, event.bossPhaseFour ? 3 : event.bossPhaseTwo ? 4 : 3);
+            event.bossCooldown = event.bossPhaseFour ? 12 * 20 : event.bossPhaseTwo ? 13 * 20 : 16 * 20;
         }
         if (--event.fangsCooldown <= 0) {
             castFangs(world, event, event.bossPhaseTwo);
-            event.fangsCooldown = event.bossPhaseFour ? 8 * 20 : event.bossPhaseTwo ? 12 * 20 : 16 * 20;
+            event.fangsCooldown = event.bossPhaseFour ? 12 * 20 : event.bossPhaseTwo ? 15 * 20 : 18 * 20;
         }
         if (--event.fireCooldown <= 0) {
             castFireCone(world, event, boss, event.bossPhaseTwo);
-            event.fireCooldown = event.bossPhaseFour ? 6 * 20 : event.bossPhaseTwo ? 9 * 20 : 13 * 20;
+            event.fireCooldown = event.bossPhaseFour ? 10 * 20 : event.bossPhaseTwo ? 12 * 20 : 15 * 20;
         }
         if (--event.comboCooldown <= 0) {
             executeBossCombo(server, world, event, boss);
-            event.comboCooldown = event.bossPhaseFour ? 8 * 20 : event.bossPhaseTwo ? 12 * 20 : 18 * 20;
+            event.comboCooldown = event.bossPhaseFour ? 14 * 20 : event.bossPhaseTwo ? 16 * 20 : 20 * 20;
         }
         if (event.bossPhaseFour) {
             tickSkullBurst(world, event, boss);
@@ -557,11 +557,11 @@ public class EventTrialManager {
         boss.setAiDisabled(false);
         boss.addStatusEffect(new StatusEffectInstance(StatusEffects.STRENGTH, 20 * 60 * 10, 1, false, true));
         boss.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 20 * 60 * 10, 0, false, true));
-        event.bossCooldown = 5 * 20;
-        event.fangsCooldown = 5 * 20;
-        event.fireCooldown = 4 * 20;
-        event.comboCooldown = 6 * 20;
-        event.skullCooldown = 4 * 20;
+        event.bossCooldown = 9 * 20;
+        event.fangsCooldown = 8 * 20;
+        event.fireCooldown = 7 * 20;
+        event.comboCooldown = 10 * 20;
+        event.skullCooldown = 7 * 20;
         event.skullBurstDelay = 0;
         event.skullsInBurst = 0;
         spawnRegearChests(world, event);
@@ -649,13 +649,13 @@ public class EventTrialManager {
         guardian.setCustomName(Text.literal("\u00A75Guardi\u00E1n del Velo"));
         guardian.setCustomNameVisible(true);
         world.spawnEntity(guardian);
-        setAttr(guardian, EntityAttributes.GENERIC_MAX_HEALTH, 240.0 + event.initialPlayers * 35.0);
-        setAttr(guardian, EntityAttributes.GENERIC_ATTACK_DAMAGE, 10.0 + event.initialPlayers);
-        setAttr(guardian, EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.36);
-        setAttr(guardian, EntityAttributes.GENERIC_ARMOR, 12.0);
+        setAttr(guardian, EntityAttributes.GENERIC_MAX_HEALTH, 200.0 + event.initialPlayers * 25.0);
+        setAttr(guardian, EntityAttributes.GENERIC_ATTACK_DAMAGE, 8.0 + event.initialPlayers * 0.75);
+        setAttr(guardian, EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.33);
+        setAttr(guardian, EntityAttributes.GENERIC_ARMOR, 9.0);
         guardian.setHealth(guardian.getMaxHealth());
-        guardian.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, 20 * 60 * 5, 1, false, true));
-        guardian.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 20 * 60 * 5, 1, false, true));
+        guardian.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, 20 * 60 * 5, 0, false, true));
+        guardian.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 20 * 60 * 5, 0, false, true));
         guardian.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 20 * 60 * 5, 0, false, true));
         targetNearestParticipant(guardian);
         event.veilGuardianId = guardian.getUuid();
@@ -805,7 +805,12 @@ public class EventTrialManager {
     }
 
     private void spawnBossMinions(ServerWorld world, EventTrial event, int count) {
-        for (int i = 0; i < count && event.mobs.size() < ModConfig.get().eventTrial.maxMobsActivos; i++) {
+        int active = countAliveMobs(world, event);
+        int bossCap = Math.min(ModConfig.get().eventTrial.maxMobsActivos,
+            Math.max(5, event.initialPlayers * (event.bossPhaseFour ? 2 : 3) + (event.bossPhaseFour ? 4 : 5)));
+        int allowed = Math.max(0, bossCap - active);
+        int amount = Math.min(count, allowed);
+        for (int i = 0; i < amount && event.mobs.size() < ModConfig.get().eventTrial.maxMobsActivos; i++) {
             MobEntity mob = createBossMinion(world, event.bossPhaseTwo, i);
             if (mob == null) continue;
             BlockPos spawn = findArenaSpawn(world, getSpawnAnchor(event.center, event.wave, i + 20), event.center);
@@ -814,7 +819,7 @@ public class EventTrialManager {
             mob.addCommandTag(MOB_TAG);
             equipBossMinion(mob, event.bossPhaseTwo, i);
             world.spawnEntity(mob);
-            boostEventMobStats(mob, event.bossPhaseTwo ? 6 : 4, true);
+            boostEventMobStats(mob, event.bossPhaseFour ? 4 : event.bossPhaseTwo ? 5 : 3, true);
             targetNearestParticipant(mob);
             event.mobs.add(mob.getUuid());
         }
@@ -925,7 +930,7 @@ public class EventTrialManager {
             spawnLightning(world, strike);
             castFangLine(world, boss, boss.getPos(), player.getPos(), event.bossPhaseTwo ? 10 : 7);
         }
-        spawnBossMinions(world, event, event.bossPhaseTwo ? 5 : 3);
+        spawnBossMinions(world, event, event.bossPhaseTwo ? 3 : 2);
     }
 
     private void castFireCombo(ServerWorld world, EventTrial event, ZombieEntity boss) {
@@ -936,8 +941,8 @@ public class EventTrialManager {
 
     private void castFinalCombo(ServerWorld world, EventTrial event, ZombieEntity boss) {
         castFireRing(world, event, boss, 8.0);
-        castFangWave(world, event, boss, 4);
-        spawnBossMinions(world, event, 6);
+        castFangWave(world, event, boss, 3);
+        spawnBossMinions(world, event, 3);
         boss.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 20 * 8, 1, false, true));
         boss.addStatusEffect(new StatusEffectInstance(StatusEffects.STRENGTH, 20 * 8, 1, false, true));
     }
@@ -952,9 +957,9 @@ public class EventTrialManager {
             return;
         }
         if (--event.skullCooldown <= 0) {
-            event.skullsInBurst = 3;
+            event.skullsInBurst = 2;
             event.skullBurstDelay = 0;
-            event.skullCooldown = 8 * 20;
+            event.skullCooldown = 12 * 20;
         }
     }
 
@@ -1121,7 +1126,7 @@ public class EventTrialManager {
             int current = mod.getLivesManager().getVidas(uuid);
             int max = mod.getLivesManager().getDefaultLives();
             mod.getLivesManager().setVidas(uuid, Math.min(max, current + ModConfig.get().eventTrial.vidasAlGanar));
-            mod.getRewardManager().giveHordeRewards(player, "Event Trial", Math.max(100, mod.getZombieManager().getDay(getEventWorld(server))));
+            mod.getRewardManager().giveEventTrialRewards(player, event.initialPlayers);
             restoreAndReturn(player);
             player.sendMessage(TextUtil.literal("&aEvent trial completado. &eRecompensa recibida."), false);
         }
@@ -1326,8 +1331,8 @@ public class EventTrialManager {
     }
 
     private void boostEventMobStats(MobEntity mob, int wave, boolean bossMinion) {
-        double healthBonus = (bossMinion ? 10.0 : 5.0) + wave * (bossMinion ? 4.0 : 3.0);
-        double damageBonus = 1.0 + wave * (bossMinion ? 0.75 : 0.55);
+        double healthBonus = (bossMinion ? 7.0 : 5.0) + wave * (bossMinion ? 2.5 : 3.0);
+        double damageBonus = 0.8 + wave * (bossMinion ? 0.45 : 0.55);
 
         var health = mob.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
         if (health != null) {
@@ -1340,7 +1345,7 @@ public class EventTrialManager {
         }
         var armor = mob.getAttributeInstance(EntityAttributes.GENERIC_ARMOR);
         if (armor != null && wave >= 3) {
-            armor.setBaseValue(Math.min(12.0, armor.getBaseValue() + wave * 0.8));
+            armor.setBaseValue(Math.min(bossMinion ? 8.0 : 12.0, armor.getBaseValue() + wave * (bossMinion ? 0.45 : 0.8)));
         }
         if (wave >= 3) {
             mob.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 20 * 8, bossMinion ? 1 : 0, false, true));
@@ -1363,11 +1368,11 @@ public class EventTrialManager {
 
     private int getWaveSize(int wave, int players) {
         return switch (wave) {
-            case 1 -> 10 + players * 5;
-            case 2 -> 14 + players * 6;
-            case 3 -> 18 + players * 7;
-            case 4 -> 22 + players * 8;
-            case 5 -> 26 + players * 9;
+            case 1 -> 8 + players * 3;
+            case 2 -> 11 + players * 4;
+            case 3 -> 14 + players * 5;
+            case 4 -> 17 + players * 5;
+            case 5 -> 20 + players * 6;
             default -> 1;
         };
     }

@@ -20,12 +20,17 @@ public class SkillTreeScreen extends Screen {
     private static final int NODE_SIZE = 28;
     private static final int TREE_TOP_PADDING = 50;
     private static final int TREE_BOTTOM_PADDING = 42;
+    private static double savedPanX = 0.0;
+    private static double savedPanY = -12.0;
+    private static double savedZoom = 1.0;
+    private static String savedFocusedSkillId;
 
     private final int experienceLevel;
     private final Map<String, SkillState> states;
-    private double panX = 0.0;
-    private double panY = -12.0;
-    private double zoom = 1.0;
+    private double panX = savedPanX;
+    private double panY = savedPanY;
+    private double zoom = savedZoom;
+    private Skill focusedSkill;
     private boolean dragging;
 
     public record SkillState(boolean unlocked, boolean canUnlock, int cost) {
@@ -35,6 +40,7 @@ public class SkillTreeScreen extends Screen {
         super(Text.literal("Arbol de Habilidades"));
         this.experienceLevel = experienceLevel;
         this.states = states;
+        this.focusedSkill = Skill.fromId(savedFocusedSkillId);
     }
 
     @Override
@@ -64,6 +70,9 @@ public class SkillTreeScreen extends Screen {
         if (button == 0) {
             Skill hovered = getHoveredSkill((int) mouseX, (int) mouseY);
             if (hovered != null) {
+                focusedSkill = hovered;
+                savedFocusedSkillId = hovered.getId();
+                saveViewport();
                 PacketByteBuf buf = PacketByteBufs.create();
                 buf.writeString(hovered.getId());
                 ClientPlayNetworking.send(SkillTreeNetworking.UNLOCK_SKILL, buf);
@@ -91,6 +100,7 @@ public class SkillTreeScreen extends Screen {
         panX += deltaX / zoom;
         panY += deltaY / zoom;
         clampPan();
+        saveViewport();
         return true;
     }
 
@@ -106,6 +116,7 @@ public class SkillTreeScreen extends Screen {
         panX = ((mouseX - getTreeCenterX()) / zoom) - beforeX;
         panY = ((mouseY - getTreeCenterY()) / zoom) - beforeY;
         clampPan();
+        saveViewport();
         return true;
     }
 
@@ -115,20 +126,21 @@ public class SkillTreeScreen extends Screen {
             panX = 0.0;
             panY = -12.0;
             zoom = 1.0;
+            saveViewport();
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     private void renderBackground(DrawContext context) {
-        context.fill(0, 0, width, height, 0x99090B0F);
+        context.fill(0, 0, width, height, 0xCC10151A);
     }
 
     private void renderTreeFrame(DrawContext context) {
         drawFrame(context, getTreeLeft(), getTreeTop(), getTreeRight(), getTreeBottom(),
-            0xFF2D2415, 0xFFD69A3E, 0xFF303844);
+            0xFF2A2117, 0xFFE2A94E, 0xFF34414A);
         context.fill(getTreeLeft() + 8, getTreeTop() + TREE_TOP_PADDING,
-            getTreeRight() - 8, getTreeBottom() - TREE_BOTTOM_PADDING, 0xFF28313A);
+            getTreeRight() - 8, getTreeBottom() - TREE_BOTTOM_PADDING, 0xFF202A32);
     }
 
     private void renderTreeCanvas(DrawContext context, int mouseX, int mouseY) {
@@ -155,10 +167,10 @@ public class SkillTreeScreen extends Screen {
 
     private void renderGrid(DrawContext context) {
         for (int x = -520; x <= 520; x += 40) {
-            context.fill(x, -390, x + 1, 350, 0x263F4A53);
+            context.fill(x, -390, x + 1, 350, 0x344F5C66);
         }
         for (int y = -390; y <= 350; y += 40) {
-            context.fill(-520, y, 520, y + 1, 0x263F4A53);
+            context.fill(-520, y, 520, y + 1, 0x344F5C66);
         }
     }
 
@@ -220,6 +232,10 @@ public class SkillTreeScreen extends Screen {
 
     private void renderNodes(DrawContext context, int mouseX, int mouseY) {
         Skill hoveredSkill = getHoveredSkill(mouseX, mouseY);
+        if (hoveredSkill != null) {
+            focusedSkill = hoveredSkill;
+            savedFocusedSkillId = hoveredSkill.getId();
+        }
         for (Skill skill : Skill.values()) {
             Node node = getNode(skill);
             SkillState state = states.get(skill.getId());
@@ -227,10 +243,17 @@ public class SkillTreeScreen extends Screen {
             boolean canUnlock = state != null && state.canUnlock();
             boolean canAfford = state != null && experienceLevel >= state.cost();
             boolean hovered = skill == hoveredSkill;
+            boolean focused = skill == focusedSkill;
 
-            int border = unlocked ? 0xFF65D472 : canUnlock && canAfford ? 0xFFFFCE54 : canUnlock ? 0xFFFF7070 : 0xFF87909A;
-            int fill = hovered ? 0xFF6A4F2A : unlocked ? 0xFF245436 : 0xFF35404A;
+            int border = unlocked ? 0xFF65D472 : canUnlock && canAfford ? 0xFFFFCE54 : canUnlock ? 0xFFFF7070 : 0xFF9BA6AF;
+            int fill = hovered || focused ? 0xFF765A2D : unlocked ? 0xFF255F3D : 0xFF3E4B55;
             context.fill(node.x() - 3, node.y() - 3, node.x() + NODE_SIZE + 3, node.y() + NODE_SIZE + 3, 0xFF15191E);
+            if (focused) {
+                context.fill(node.x() - 5, node.y() - 5, node.x() + NODE_SIZE + 5, node.y() - 3, 0xFFFFE0A3);
+                context.fill(node.x() - 5, node.y() + NODE_SIZE + 3, node.x() + NODE_SIZE + 5, node.y() + NODE_SIZE + 5, 0xFFFFE0A3);
+                context.fill(node.x() - 5, node.y() - 5, node.x() - 3, node.y() + NODE_SIZE + 5, 0xFFFFE0A3);
+                context.fill(node.x() + NODE_SIZE + 3, node.y() - 5, node.x() + NODE_SIZE + 5, node.y() + NODE_SIZE + 5, 0xFFFFE0A3);
+            }
             context.fill(node.x() - 2, node.y() - 2, node.x() + NODE_SIZE + 2, node.y() + NODE_SIZE + 2, border);
             context.fill(node.x(), node.y(), node.x() + NODE_SIZE, node.y() + NODE_SIZE, fill);
             context.drawItem(new ItemStack(skill.getIcon()), node.x() + 6, node.y() + 6);
@@ -263,13 +286,14 @@ public class SkillTreeScreen extends Screen {
         int detailLeft = getTreeRight() + 8;
         int detailRight = detailLeft + sideWidth;
         drawFrame(context, detailLeft, top, detailRight, bottom, 0xFF201B15, 0xFFD69A3E, 0xFF2D2B24);
-        Skill hovered = getHoveredSkill(mouseX, mouseY);
-        if (hovered == null) {
+        Skill detail = getHoveredSkill(mouseX, mouseY);
+        if (detail == null) detail = focusedSkill;
+        if (detail == null) {
             drawSmallTitle(context, "Detalle", detailLeft + 10, top + 10);
             drawWrapped(context, "Pasa el mouse por una habilidad para ver requisito, costo y efecto.", detailLeft + 10, top + 32, sideWidth - 18, 0xFFFFFFFF);
             renderLegend(context, detailLeft + 10, top + 92);
         } else {
-            renderSkillDetails(context, hovered, detailLeft + 10, top + 10, sideWidth - 18);
+            renderSkillDetails(context, detail, detailLeft + 10, top + 10, sideWidth - 18);
         }
     }
 
@@ -385,6 +409,12 @@ public class SkillTreeScreen extends Screen {
     private void clampPan() {
         panX = clamp(panX, -560.0, 560.0);
         panY = clamp(panY, -320.0, 220.0);
+    }
+
+    private void saveViewport() {
+        savedPanX = panX;
+        savedPanY = panY;
+        savedZoom = zoom;
     }
 
     private int getTreeLeft() {

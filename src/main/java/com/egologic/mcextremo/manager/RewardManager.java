@@ -10,6 +10,7 @@ import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.minecraft.entity.attribute.EntityAttributeModifier;
 import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtString;
@@ -66,6 +67,27 @@ public class RewardManager {
         if (materials > 0) {
             player.sendMessage(TextUtil.literal("&6Recompensa de horda: &e" + materials + " fragmento(s) de mejora."), false);
         }
+    }
+
+    public void giveEventTrialRewards(ServerPlayerEntity player, int participants) {
+        int materials = Math.min(24, 10 + Math.max(1, participants) * 3);
+        giveOrDrop(player, createMaterial(materials));
+
+        if (ModConfig.get().corazones.activado) {
+            giveOrDrop(player, createHeart(1));
+            if (random.nextDouble() < 0.35) {
+                giveOrDrop(player, createHeart(1));
+            }
+        }
+
+        giveOrDrop(player, new ItemStack(Items.EXPERIENCE_BOTTLE, 24));
+        giveOrDrop(player, new ItemStack(Items.ENCHANTED_GOLDEN_APPLE, 1));
+        if (random.nextDouble() < 0.35) {
+            giveOrDrop(player, new ItemStack(Items.TOTEM_OF_UNDYING, 1));
+        }
+
+        player.sendMessage(TextUtil.literal("&6Recompensa de evento: &e" + materials
+            + " fragmentos, corazones y suministros raros."), false);
     }
 
     public ItemStack createHeart(int count) {
