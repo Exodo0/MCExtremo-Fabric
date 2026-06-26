@@ -1,5 +1,6 @@
 package com.egologic.mcextremo.entity.boss;
 
+import com.egologic.mcextremo.config.ModConfig;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.data.DataTracker;
 import net.minecraft.entity.data.TrackedData;
@@ -48,8 +49,18 @@ public class TrialGuardianSpiderEntity extends SpiderEntity implements GeoEntity
 
     @Override
     public void onDeath(DamageSource damageSource) {
-        playGuardianState(TrialGuardianSpiderState.DEATH, 30);
+        playGuardianState(TrialGuardianSpiderState.DEATH, Math.max(30, ModConfig.get().visuals.phaseTransitionDurationTicks / 2));
         super.onDeath(damageSource);
+    }
+
+    @Override
+    protected void updatePostDeath() {
+        int deathTicks = Math.max(30, ModConfig.get().visuals.phaseTransitionDurationTicks / 2);
+        this.deathTime++;
+        if (this.deathTime >= deathTicks && !this.getWorld().isClient()) {
+            this.getWorld().sendEntityStatus(this, (byte) 60);
+            this.remove(RemovalReason.KILLED);
+        }
     }
 
     public TrialGuardianSpiderState getGuardianState() {

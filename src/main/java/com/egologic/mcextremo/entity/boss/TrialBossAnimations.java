@@ -26,7 +26,8 @@ public final class TrialBossAnimations {
             case PHASE_TRANSITION -> PHASE_TRANSITION;
             case STUNNED -> STUNNED;
             case DYING -> DEATH;
-            case CHASING, IDLE -> IDLE;
+            case CHASING -> WALK;
+            case IDLE -> IDLE;
         };
     }
 }

@@ -1,5 +1,6 @@
 package com.egologic.mcextremo.client;
 
+import com.egologic.mcextremo.config.ModConfig;
 import com.egologic.mcextremo.visual.TrialVisualEvent;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
@@ -54,20 +55,31 @@ public final class TrialVisualClientController {
         }
         if (activeVisual.ticksRemaining() % 4 == 0) {
             int count = activeVisual.event() == TrialVisualEvent.HORDE_START ? 10 : 16;
-            client.world.addParticle(ParticleTypes.REVERSE_PORTAL, activeVisual.pos().x, activeVisual.pos().y + 1.0, activeVisual.pos().z, 0.0, 0.04, 0.0);
-            for (int i = 0; i < count; i++) {
+            int particleBudget = Math.max(0, ModConfig.get().visuals.maxVisualParticlesPerTick);
+            int emitted = 0;
+            emitted += addParticle(client, ParticleTypes.REVERSE_PORTAL, activeVisual.pos().x, activeVisual.pos().y + 1.0, activeVisual.pos().z, 0.0, 0.04, 0.0, emitted, particleBudget);
+            for (int i = 0; i < count && emitted < particleBudget; i++) {
                 double angle = Math.PI * 2.0 * i / count + activeVisual.ticksRemaining() * 0.08;
                 double radius = activeVisual.event() == TrialVisualEvent.BOSS_PHASE_CHANGE ? 2.8 : 1.8;
-                client.world.addParticle(
+                emitted += addParticle(client,
                     activeVisual.event() == TrialVisualEvent.HORDE_START ? ParticleTypes.SOUL_FIRE_FLAME : ParticleTypes.DRAGON_BREATH,
                     activeVisual.pos().x + Math.cos(angle) * radius,
                     activeVisual.pos().y + 0.8 + Math.sin(activeVisual.ticksRemaining() * 0.08) * 0.25,
                     activeVisual.pos().z + Math.sin(angle) * radius,
-                    0.0, 0.02, 0.0
+                    0.0, 0.02, 0.0,
+                    emitted, particleBudget
                 );
             }
         }
         activeVisual = activeVisual.tick();
+    }
+
+    private static int addParticle(MinecraftClient client, net.minecraft.particle.ParticleEffect particle,
+                                   double x, double y, double z, double velocityX, double velocityY, double velocityZ,
+                                   int emitted, int budget) {
+        if (client.world == null || emitted >= budget) return 0;
+        client.world.addParticle(particle, x, y, z, velocityX, velocityY, velocityZ);
+        return 1;
     }
 
     private static void renderHud(DrawContext context, float tickDelta) {

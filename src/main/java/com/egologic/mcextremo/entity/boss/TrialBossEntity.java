@@ -1,7 +1,9 @@
 package com.egologic.mcextremo.entity.boss;
 
+import com.egologic.mcextremo.config.ModConfig;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.ai.goal.ZombieAttackGoal;
+import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.data.DataTracker;
 import net.minecraft.entity.data.TrackedData;
 import net.minecraft.entity.data.TrackedDataHandlerRegistry;
@@ -49,6 +51,21 @@ public class TrialBossEntity extends ZombieEntity implements GeoEntity {
             }
         } else if (getBossState() != TrialBossState.DYING && getBossState() != TrialBossState.SPAWNING) {
             setBossState(hasTarget() ? TrialBossState.CHASING : TrialBossState.IDLE);
+        }
+    }
+
+    @Override
+    public void onDeath(DamageSource damageSource) {
+        playBossState(TrialBossState.DYING, ModConfig.get().visuals.bossDeathDurationTicks);
+        super.onDeath(damageSource);
+    }
+
+    @Override
+    protected void updatePostDeath() {
+        this.deathTime++;
+        if (this.deathTime >= ModConfig.get().visuals.bossDeathDurationTicks && !this.getWorld().isClient()) {
+            this.getWorld().sendEntityStatus(this, (byte) 60);
+            this.remove(RemovalReason.KILLED);
         }
     }
 

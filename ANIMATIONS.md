@@ -31,6 +31,17 @@ El archivo `trial_boss.animation.json` debe declarar estas claves:
 
 Si una animacion todavia no esta terminada, deja una animacion placeholder con la misma clave para evitar errores en runtime.
 
+## Sincronizacion
+
+El servidor controla el estado real de animacion mediante `DataTracker`:
+
+- `TrialBossEntity` replica `TrialBossState`.
+- `TrialGuardianSpiderEntity` replica `TrialGuardianSpiderState`.
+
+El cliente no debe decidir estados de boss al recibir packets. Los packets como `BOSS_ANIMATION` solo existen como compatibilidad/aviso visual; el renderer de GeckoLib lee el estado replicado por la entidad. Esto evita desyncs donde un cliente ve una animacion distinta al estado real del combate.
+
+`TrialBossAnimations.fromState(CHASING)` apunta a `WALK` como fallback seguro. En runtime el controller de GeckoLib decide entre `WALK` y `RUN` usando velocidad/sprint del boss, por eso el enum no necesita dos estados separados para persecucion lenta y rapida.
+
 La arana guardian del Velo usa estas claves:
 
 - `animation.trial_guardian_spider.idle`
