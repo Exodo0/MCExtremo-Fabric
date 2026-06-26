@@ -1,0 +1,65 @@
+{
+  "format_version": "1.8.0",
+  "animations": {
+    "animation.trial_guardian_spider.idle": {
+      "loop": true,
+      "animation_length": 2.0,
+      "bones": {
+        "body": {
+          "position": {
+            "0.0": [0, 0, 0],
+            "1.0": [0, 0.22, 0],
+            "2.0": [0, 0, 0]
+          }
+        },
+        "head": {
+          "rotation": {
+            "0.0": [0, -3, 0],
+            "1.0": [0, 3, 0],
+            "2.0": [0, -3, 0]
+          }
+        }
+      }
+    },
+    "animation.trial_guardian_spider.walk": {
+      "loop": true,
+      "animation_length": 0.8,
+      "bones": {
+        "right_front_leg": {"rotation": {"0.0": [0, 20, -12], "0.4": [0, -20, 12], "0.8": [0, 20, -12]}},
+        "left_front_leg": {"rotation": {"0.0": [0, -20, 12], "0.4": [0, 20, -12], "0.8": [0, -20, 12]}},
+        "right_mid_front_leg": {"rotation": {"0.0": [0, -18, 8], "0.4": [0, 18, -8], "0.8": [0, -18, 8]}},
+        "left_mid_front_leg": {"rotation": {"0.0": [0, 18, -8], "0.4": [0, -18, 8], "0.8": [0, 18, -8]}},
+        "right_mid_back_leg": {"rotation": {"0.0": [0, 18, 8], "0.4": [0, -18, -8], "0.8": [0, 18, 8]}},
+        "left_mid_back_leg": {"rotation": {"0.0": [0, -18, -8], "0.4": [0, 18, 8], "0.8": [0, -18, -8]}},
+        "right_back_leg": {"rotation": {"0.0": [0, -20, -12], "0.4": [0, 20, 12], "0.8": [0, -20, -12]}},
+        "left_back_leg": {"rotation": {"0.0": [0, 20, 12], "0.4": [0, -20, -12], "0.8": [0, 20, 12]}}
+      }
+    },
+    "animation.trial_guardian_spider.attack": {
+      "loop": true,
+      "animation_length": 0.6,
+      "bones": {
+        "body": {"rotation": {"0.0": [0, 0, 0], "0.22": [16, 0, 0], "0.6": [0, 0, 0]}},
+        "head": {"position": {"0.0": [0, 0, 0], "0.22": [0, 0, -2.2], "0.6": [0, 0, 0]}},
+        "right_front_leg": {"rotation": {"0.0": [0, 10, 0], "0.22": [0, 38, -28], "0.6": [0, 10, 0]}},
+        "left_front_leg": {"rotation": {"0.0": [0, -10, 0], "0.22": [0, -38, 28], "0.6": [0, -10, 0]}}
+      }
+    },
+    "animation.trial_guardian_spider.summon": {
+      "loop": true,
+      "animation_length": 1.5,
+      "bones": {
+        "body": {"position": {"0.0": [0, -1.5, 0], "0.7": [0, 0.6, 0], "1.5": [0, 0, 0]}},
+        "head": {"rotation": {"0.0": [20, 0, 0], "0.7": [-18, 0, 0], "1.5": [0, 0, 0]}}
+      }
+    },
+    "animation.trial_guardian_spider.death": {
+      "loop": true,
+      "animation_length": 1.5,
+      "bones": {
+        "body": {"rotation": {"0.0": [0, 0, 0], "1.5": [0, 0, 90]}, "position": {"0.0": [0, 0, 0], "1.5": [0, -4, 0]}},
+        "head": {"rotation": {"0.0": [0, 0, 0], "1.5": [0, 0, 30]}}
+      }
+    }
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "format_version": "1.8.0",
+  "animations": {
+    "animation.trial_boss.idle": {
+      "loop": true,
+      "animation_length": 2.0,
+      "bones": {
+        "body": {
+          "position": {
+            "0.0": [0, 0, 0],
+            "1.0": [0, 0.35, 0],
+            "2.0": [0, 0, 0]
+          }
+        },
+        "head": {
+          "rotation": {
+            "0.0": [0, -3, 0],
+            "1.0": [0, 3, 0],
+            "2.0": [0, -3, 0]
+          }
+        }
+      }
+    },
+    "animation.trial_boss.walk": {
+      "loop": true,
+      "animation_length": 1.0,
+      "bones": {
+        "right_leg": {"rotation": {"0.0": [28, 0, 0], "0.5": [-28, 0, 0], "1.0": [28, 0, 0]}},
+        "left_leg": {"rotation": {"0.0": [-28, 0, 0], "0.5": [28, 0, 0], "1.0": [-28, 0, 0]}},
+        "right_arm": {"rotation": {"0.0": [-20, 0, 0], "0.5": [20, 0, 0], "1.0": [-20, 0, 0]}},
+        "left_arm": {"rotation": {"0.0": [20, 0, 0], "0.5": [-20, 0, 0], "1.0": [20, 0, 0]}}
+      }
+    },
+    "animation.trial_boss.run": {
+      "loop": true,
+      "animation_length": 0.55,
+      "bones": {
+        "body": {"rotation": {"0.0": [8, 0, 0]}},
+        "right_leg": {"rotation": {"0.0": [42, 0, 0], "0.275": [-42, 0, 0], "0.55": [42, 0, 0]}},
+        "left_leg": {"rotation": {"0.0": [-42, 0, 0], "0.275": [42, 0, 0], "0.55": [-42, 0, 0]}}
+      }
+    },
+    "animation.trial_boss.spawn_intro": {
+      "loop": true,
+      "animation_length": 2.0,
+      "bones": {
+        "body": {"position": {"0.0": [0, -3, 0], "1.0": [0, 0.4, 0], "2.0": [0, 0, 0]}},
+        "head": {"rotation": {"0.0": [35, 0, 0], "1.0": [-15, 0, 0], "2.0": [0, 0, 0]}},
+        "right_arm": {"rotation": {"0.0": [-80, 0, 15], "1.0": [-25, 0, 5], "2.0": [0, 0, 0]}},
+        "left_arm": {"rotation": {"0.0": [-80, 0, -15], "1.0": [-25, 0, -5], "2.0": [0, 0, 0]}}
+      }
+    },
+    "animation.trial_boss.roar": {
+      "loop": true,
+      "animation_length": 1.2,
+      "bones": {
+        "head": {"rotation": {"0.0": [0, 0, 0], "0.35": [-35, 0, 0], "1.2": [0, 0, 0]}},
+        "right_arm": {"rotation": {"0.0": [0, 0, 0], "0.35": [-95, 0, 25], "1.2": [0, 0, 0]}},
+        "left_arm": {"rotation": {"0.0": [0, 0, 0], "0.35": [-95, 0, -25], "1.2": [0, 0, 0]}}
+      }
+    },
+    "animation.trial_boss.basic_attack": {
+      "loop": true,
+      "animation_length": 0.8,
+      "bones": {
+        "right_arm": {"rotation": {"0.0": [-20, 0, 0], "0.25": [-120, 0, 25], "0.45": [40, 0, -10], "0.8": [0, 0, 0]}},
+        "body": {"rotation": {"0.0": [0, 0, 0], "0.35": [0, -18, 0], "0.8": [0, 0, 0]}}
+      }
+    },
+    "animation.trial_boss.special_attack": {
+      "loop": true,
+      "animation_length": 1.0,
+      "bones": {
+        "body": {"position": {"0.0": [0, 0, 0], "0.5": [0, 0.8, 0], "1.0": [0, 0, 0]}},
+        "right_arm": {"rotation": {"0.0": [0, 0, 0], "0.5": [-140, 0, 40], "1.0": [0, 0, 0]}},
+        "left_arm": {"rotation": {"0.0": [0, 0, 0], "0.5": [-140, 0, -40], "1.0": [0, 0, 0]}}
+      }
+    },
+    "animation.trial_boss.summon_minions": {
+      "loop": true,
+      "animation_length": 1.3,
+      "bones": {
+        "body": {"rotation": {"0.0": [0, 0, 0], "0.65": [-12, 0, 0], "1.3": [0, 0, 0]}},
+        "right_arm": {"rotation": {"0.0": [0, 0, 0], "0.65": [-150, 0, 50], "1.3": [0, 0, 0]}},
+        "left_arm": {"rotation": {"0.0": [0, 0, 0], "0.65": [-150, 0, -50], "1.3": [0, 0, 0]}}
+      }
+    },
+    "animation.trial_boss.phase_transition": {
+      "loop": true,
+      "animation_length": 1.5,
+      "bones": {
+        "body": {"rotation": {"0.0": [0, 0, 0], "0.75": [0, 360, 0], "1.5": [0, 720, 0]}},
+        "head": {"rotation": {"0.0": [0, 0, 0], "0.75": [-25, 0, 0], "1.5": [0, 0, 0]}}
+      }
+    },
+    "animation.trial_boss.stunned": {
+      "loop": true,
+      "animation_length": 1.0,
+      "bones": {
+        "body": {"rotation": {"0.0": [0, 0, -6], "0.5": [0, 0, 6], "1.0": [0, 0, -6]}}
+      }
+    },
+    "animation.trial_boss.death": {
+      "loop": true,
+      "animation_length": 2.0,
+      "bones": {
+        "body": {"rotation": {"0.0": [0, 0, 0], "1.0": [75, 0, 0], "2.0": [90, 0, 0]}, "position": {"0.0": [0, 0, 0], "2.0": [0, -5, 0]}},
+        "head": {"rotation": {"0.0": [0, 0, 0], "1.0": [35, 0, 0], "2.0": [45, 0, 0]}}
+      }
+    }
+  }
+}
