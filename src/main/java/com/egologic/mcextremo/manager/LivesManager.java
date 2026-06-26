@@ -154,6 +154,7 @@ public class LivesManager {
         pendingEliminations.remove(player.getUuid());
         unban(player.getServer(), player.getGameProfile());
         reviveProfile(player.getGameProfile());
+        mod.getReviveTrialManager().cancelTrialForRevive(player);
         restoreAfterRevive(player);
     }
 

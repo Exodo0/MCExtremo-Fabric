@@ -13,14 +13,13 @@ class ReviveTrialArenaBuilder {
                 double edgeNoise = ((Math.abs(dx * 31 + dz * 17) % 9) - 4) * 0.45;
                 if (distance > radius + edgeNoise) continue;
 
-                int thickness = Math.max(2, (int) Math.round(6 - distance / 6.0));
+                int thickness = Math.max(3, (int) Math.round(8 - distance / 7.0));
                 for (int dy = 0; dy < thickness; dy++) {
                     BlockPos pos = center.add(dx, -dy, dz);
                     world.setBlockState(pos, Blocks.END_STONE.getDefaultState());
                 }
-                if (distance > radius - 4 && distance < radius + 1) {
-                    world.setBlockState(center.add(dx, 1, dz), Blocks.END_STONE_BRICKS.getDefaultState());
-                }
+                world.setBlockState(center.add(dx, 1, dz),
+                    (distance > radius - 4 ? Blocks.END_STONE_BRICKS : Blocks.END_STONE).getDefaultState());
             }
         }
 
@@ -58,6 +57,8 @@ class ReviveTrialArenaBuilder {
         buildHealingCover(world, center.add(-radius / 4, 1, 0));
         buildOpenCover(world, center, radius);
         buildVoidDecorations(world, center, radius);
+        buildRunicPaths(world, center, radius);
+        buildSmallCrystals(world, center, radius);
 
         buildInnerSafetyWall(world, center, radius);
         buildBarrierWall(world, center, radius);
@@ -244,6 +245,33 @@ class ReviveTrialArenaBuilder {
         buildBeaconSpire(world, center.add(-offset, 3, 0));
         buildBeaconSpire(world, center.add(0, 3, offset));
         buildBeaconSpire(world, center.add(0, 3, -offset));
+    }
+    private void buildRunicPaths(ServerWorld world, BlockPos center, int radius) {
+        int max = Math.max(8, radius - 12);
+        for (int dir = 0; dir < 4; dir++) {
+            int dirX = dir == 0 ? 1 : dir == 1 ? -1 : 0;
+            int dirZ = dir == 2 ? 1 : dir == 3 ? -1 : 0;
+            for (int step = 7; step <= max; step += 3) {
+                BlockPos pos = center.add(dirX * step, 2, dirZ * step);
+                world.setBlockState(pos, (step % 2 == 0 ? Blocks.CRYING_OBSIDIAN : Blocks.PURPUR_BLOCK).getDefaultState());
+                if (step % 9 == 0) {
+                    world.setBlockState(pos.up(), Blocks.END_ROD.getDefaultState());
+                }
+            }
+        }
+    }
+    private void buildSmallCrystals(ServerWorld world, BlockPos center, int radius) {
+        int crystalRadius = Math.max(10, radius - 18);
+        for (int i = 0; i < 12; i++) {
+            double angle = Math.PI * 2.0 * i / 12.0;
+            BlockPos base = center.add((int) Math.round(Math.cos(angle) * crystalRadius), 2,
+                (int) Math.round(Math.sin(angle) * crystalRadius));
+            world.setBlockState(base, Blocks.OBSIDIAN.getDefaultState());
+            world.setBlockState(base.up(), (i % 2 == 0 ? Blocks.CRYING_OBSIDIAN : Blocks.PURPUR_BLOCK).getDefaultState());
+            if (i % 3 == 0) {
+                world.setBlockState(base.up(2), Blocks.END_ROD.getDefaultState());
+            }
+        }
     }
     private void buildBeaconSpire(ServerWorld world, BlockPos base) {
         world.setBlockState(base, Blocks.OBSIDIAN.getDefaultState());

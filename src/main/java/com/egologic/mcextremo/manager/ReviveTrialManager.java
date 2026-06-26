@@ -250,6 +250,20 @@ public class ReviveTrialManager {
         }
     }
 
+    public void cancelTrialForRevive(ServerPlayerEntity player) {
+        Trial trial = activeTrials.remove(player.getUuid());
+        if (trial == null) {
+            mod.getDataManager().setTrialState(player.getUuid(), STATE_ALIVE);
+            mod.getDataManager().clearTrialInventory(player.getUuid());
+            return;
+        }
+
+        cleanupTrial(player.getServer(), trial);
+        restoreInventory(player);
+        mod.getDataManager().setTrialState(player.getUuid(), STATE_ALIVE);
+        mod.getDataManager().clearTrialInventory(player.getUuid());
+    }
+
     public void setArena(ServerPlayerEntity player) {
         ModConfig.ReviveTrial config = ModConfig.get().reviveTrial;
         config.world = player.getWorld().getRegistryKey().getValue().toString();
@@ -1013,6 +1027,8 @@ public class ReviveTrialManager {
     }
 
     private void keepPlayerInsideArena(ServerPlayerEntity player, BlockPos center) {
+        if (player.getWorld() != getTrialWorld(player.getServer())) return;
+
         double dx = player.getX() - (center.getX() + 0.5);
         double dz = player.getZ() - (center.getZ() + 0.5);
         double max = ModConfig.get().reviveTrial.radioArena + 6.0;

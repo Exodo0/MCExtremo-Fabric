@@ -1249,8 +1249,8 @@ public class EventTrialManager {
             int current = mod.getLivesManager().getVidas(uuid);
             int max = mod.getLivesManager().getDefaultLives();
             mod.getLivesManager().setVidas(uuid, Math.min(max, current + ModConfig.get().eventTrial.vidasAlGanar));
-            mod.getRewardManager().giveEventTrialRewards(player, event.initialPlayers);
             restoreAndReturn(player);
+            mod.getRewardManager().giveEventTrialRewards(player, event.initialPlayers);
             player.sendMessage(TextUtil.literal("&aEvent trial completado. &eRecompensa recibida."), false);
         }
         cleanupEvent(server, event);
