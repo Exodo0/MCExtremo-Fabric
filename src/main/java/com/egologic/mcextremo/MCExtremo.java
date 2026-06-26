@@ -2,6 +2,7 @@ package com.egologic.mcextremo;
 
 import com.egologic.mcextremo.command.ModCommands;
 import com.egologic.mcextremo.config.ModConfig;
+import com.egologic.mcextremo.entity.ModEntities;
 import com.egologic.mcextremo.item.ModItems;
 import com.egologic.mcextremo.listener.DeathListener;
 import com.egologic.mcextremo.listener.JoinListener;
@@ -23,6 +24,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.server.network.ServerPlayerEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.bernie.geckolib.GeckoLib;
 
 public class MCExtremo implements ModInitializer {
     public static final String MOD_ID = "mcextremo";
@@ -47,7 +49,9 @@ public class MCExtremo implements ModInitializer {
     public void onInitialize() {
         instance = this;
 
+        GeckoLib.initialize();
         ModConfig.register();
+        ModEntities.register();
         ModItems.register();
 
         dataManager = new DataManager(this);

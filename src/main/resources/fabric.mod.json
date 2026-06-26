@@ -21,6 +21,7 @@
     "minecraft": "~1.20.4",
     "java": ">=17",
     "fabric-api": "*",
-    "cloth-config": "*"
+    "cloth-config": "*",
+    "geckolib": ">=4.4.4"
   }
 }

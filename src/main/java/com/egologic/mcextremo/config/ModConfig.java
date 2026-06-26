@@ -23,6 +23,7 @@ public class ModConfig implements ConfigData {
     public Mejoras mejoras = new Mejoras();
     public ReviveTrial reviveTrial = new ReviveTrial();
     public EventTrial eventTrial = new EventTrial();
+    public Visuals visuals = new Visuals();
 
     public static class Vidas {
         public int defaultLives = 3;
@@ -235,6 +236,16 @@ public class ModConfig implements ConfigData {
         public double z = 0.5;
     }
 
+    public static class Visuals {
+        public boolean enableBossIntroAnimations = true;
+        public boolean enableTrialScreenEffects = true;
+        public boolean enableHordeVisualEffects = true;
+        public int bossIntroDurationTicks = 80;
+        public int phaseTransitionDurationTicks = 60;
+        public int bossDeathDurationTicks = 60;
+        public int maxVisualParticlesPerTick = 80;
+    }
+
     private static ModConfig instance;
 
     public static void register() {
@@ -364,6 +375,11 @@ public class ModConfig implements ConfigData {
         config.eventTrial.introDuracionTicks = clamp(config.eventTrial.introDuracionTicks, 40, 240);
         config.eventTrial.introRadioSpawn = clamp(config.eventTrial.introRadioSpawn, 6, 32);
         config.eventTrial.distanciaEntreArenas = clamp(config.eventTrial.distanciaEntreArenas, 512, 20000);
+
+        config.visuals.bossIntroDurationTicks = clamp(config.visuals.bossIntroDurationTicks, 20, 160);
+        config.visuals.phaseTransitionDurationTicks = clamp(config.visuals.phaseTransitionDurationTicks, 20, 160);
+        config.visuals.bossDeathDurationTicks = clamp(config.visuals.bossDeathDurationTicks, 20, 160);
+        config.visuals.maxVisualParticlesPerTick = clamp(config.visuals.maxVisualParticlesPerTick, 10, 200);
     }
 
     private static int clamp(int value, int min, int max) {

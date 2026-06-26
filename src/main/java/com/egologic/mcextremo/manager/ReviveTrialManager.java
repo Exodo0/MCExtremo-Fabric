@@ -2,9 +2,14 @@ package com.egologic.mcextremo.manager;
 
 import com.egologic.mcextremo.MCExtremo;
 import com.egologic.mcextremo.config.ModConfig;
+import com.egologic.mcextremo.entity.ModEntities;
+import com.egologic.mcextremo.entity.boss.TrialBossAnimations;
+import com.egologic.mcextremo.entity.boss.TrialBossEntity;
+import com.egologic.mcextremo.entity.boss.TrialBossState;
 import com.egologic.mcextremo.network.TrialCinematicNetworking;
 import com.egologic.mcextremo.skilltree.SkillPassiveHandler;
 import com.egologic.mcextremo.util.TextUtil;
+import com.egologic.mcextremo.visual.TrialVisualEvent;
 import net.minecraft.block.Blocks;
 import net.minecraft.enchantment.EnchantmentHelper;
 import net.minecraft.enchantment.Enchantments;
@@ -331,6 +336,9 @@ public class ReviveTrialManager {
 
         int preparation = Math.max(20, config.preparacionSegundos * 20);
         activeTrials.put(player.getUuid(), new Trial(player.getUuid(), bossBar, center, attempt, 0, preparation, new HashSet<>(), false, null, 0, 0, false, false, false, false, 0, null, voluntary));
+        TrialCinematicNetworking.sendVisualEvent(player, TrialVisualEvent.START_TRIAL, Vec3d.ofCenter(center), 60,
+            voluntary ? "Prueba de Vidas" : "Prueba de Revivir",
+            voluntary ? "Sobrevive para recuperar una vida" : "Gana tu regreso al mundo");
         if (voluntary) {
             player.sendMessage(TextUtil.literal("&5Has iniciado una prueba voluntaria. &eSobrevive para recuperar una vida."), false);
             player.sendMessage(TextUtil.literal("&7Cooldown: &e" + config.trialVoluntarioCooldownMinutos + " minuto(s)&7."), false);
@@ -348,6 +356,8 @@ public class ReviveTrialManager {
         trial.bossBar().setPercent(1.0f);
         trial.bossBar().setName(TextUtil.literal("&aFelicidades, superaste la prueba"));
         player.sendMessage(TextUtil.literal("&aFelicidades, superaste la prueba. &ePronto reviviras."), false);
+        TrialCinematicNetworking.sendVisualEvent(player, TrialVisualEvent.TRIAL_COMPLETE, Vec3d.ofCenter(trial.center()), 80,
+            "Trial completado", "Tu vida vuelve a ti");
         return trial.startVictoryDelay(delay);
     }
 
@@ -435,35 +445,71 @@ public class ReviveTrialManager {
         }
 
         for (int i = 0; i < amount; i++) {
-            ZombieEntity zombie = EntityType.ZOMBIE.create(world);
-            if (zombie == null) continue;
             boolean finalWave = wave >= ModConfig.get().reviveTrial.oleadas;
+            HostileEntity mob = finalWave ? ModEntities.TRIAL_BOSS.create(world) : createTrialWaveMob(world, wave, i);
+            if (mob == null) continue;
             BlockPos spawn = finalWave
                 ? center.add(0, 18, 0)
                 : findSafeSpawnPos(world, getWaveSpawnPos(center, wave, i), center);
             double angle = Math.atan2(center.getZ() - spawn.getZ(), center.getX() - spawn.getX());
-            zombie.refreshPositionAndAngles(
+            mob.refreshPositionAndAngles(
                 spawn.getX() + 0.5,
                 spawn.getY(),
                 spawn.getZ() + 0.5,
                 (float) Math.toDegrees(angle) - 90.0f,
                 0.0f
             );
-            zombie.addCommandTag("mcextremo_trial");
-            zombie.setTarget(finalWave ? null : player);
-            equipZombie(zombie, wave, i);
-            world.spawnEntity(zombie);
-            mod.getZombieManager().applyScaling(zombie, Math.max(35, mod.getZombieManager().getDay(world)));
-            if (finalWave) {
-                equipBossZombie(zombie);
-                zombie.setAiDisabled(true);
-                zombie.setVelocity(0.0, -0.25, 0.0);
-                zombie.velocityModified = true;
-                TrialCinematicNetworking.sendBossIntro(player, zombie.getId(), zombie.getPos().add(0.0, zombie.getHeight() * 0.75, 0.0), BOSS_INTRO_TICKS, "El Coloso del Vacio desciende");
+            mob.addCommandTag("mcextremo_trial");
+            mob.setTarget(finalWave ? null : player);
+            equipTrialMob(mob, wave, i);
+            world.spawnEntity(mob);
+            if (mob instanceof ZombieEntity zombie) {
+                mod.getZombieManager().applyScaling(zombie, Math.max(35, mod.getZombieManager().getDay(world)));
             }
-            mobs.add(zombie.getUuid());
+            if (finalWave && mob instanceof ZombieEntity zombie) {
+                equipBossZombie(zombie);
+                if (mob instanceof TrialBossEntity boss) {
+                    boss.playBossState(TrialBossState.SPAWNING, BOSS_INTRO_TICKS);
+                }
+                mob.setAiDisabled(true);
+                mob.setVelocity(0.0, -0.25, 0.0);
+                mob.velocityModified = true;
+                TrialCinematicNetworking.sendVisualEvent(player, TrialVisualEvent.BOSS_INTRO, mob.getPos(), BOSS_INTRO_TICKS,
+                    "Coloso del Vacio", "El jefe del trial despierta");
+                TrialCinematicNetworking.sendBossAnimation(player, mob.getId(), TrialBossAnimations.SPAWN_INTRO, BOSS_INTRO_TICKS);
+                TrialCinematicNetworking.sendBossIntro(player, mob.getId(), mob.getPos().add(0.0, mob.getHeight() * 0.75, 0.0), BOSS_INTRO_TICKS, "El Coloso del Vacio desciende");
+            }
+            mobs.add(mob.getUuid());
         }
         return new WaveSpawnResult(mobs, null);
+    }
+
+    private HostileEntity createTrialWaveMob(ServerWorld world, int wave, int index) {
+        int roll = Math.floorMod(wave * 31 + index * 17 + world.random.nextInt(100), 100);
+        if (wave <= 1) {
+            if (roll < 20) return EntityType.SPIDER.create(world);
+            if (roll < 35) return EntityType.SKELETON.create(world);
+            return EntityType.ZOMBIE.create(world);
+        }
+        if (wave == 2) {
+            if (roll < 24) return EntityType.SPIDER.create(world);
+            if (roll < 46) return EntityType.SKELETON.create(world);
+            if (roll < 60) return EntityType.HUSK.create(world);
+            return EntityType.ZOMBIE.create(world);
+        }
+        if (wave == 3) {
+            if (roll < 18) return EntityType.CAVE_SPIDER.create(world);
+            if (roll < 42) return EntityType.SKELETON.create(world);
+            if (roll < 60) return EntityType.SPIDER.create(world);
+            if (roll < 76) return EntityType.HUSK.create(world);
+            return EntityType.ZOMBIE.create(world);
+        }
+        if (roll < 18) return EntityType.STRAY.create(world);
+        if (roll < 36) return EntityType.CAVE_SPIDER.create(world);
+        if (roll < 58) return EntityType.SKELETON.create(world);
+        if (roll < 74) return EntityType.SPIDER.create(world);
+        if (roll < 88) return EntityType.HUSK.create(world);
+        return EntityType.ZOMBIE.create(world);
     }
 
     private BlockPos getWaveSpawnPos(BlockPos center, int wave, int index) {
@@ -558,10 +604,40 @@ public class ReviveTrialManager {
         };
     }
 
-    private void equipZombie(ZombieEntity zombie, int wave, int index) {
+    private void equipTrialMob(HostileEntity mob, int wave, int index) {
         if (wave >= ModConfig.get().reviveTrial.oleadas) {
             return;
         }
+        if (mob instanceof ZombieEntity zombie) {
+            equipZombie(zombie, wave, index);
+            return;
+        }
+        if (mob.getType() == EntityType.SKELETON || mob.getType() == EntityType.STRAY) {
+            mob.equipStack(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
+            if (wave >= 3) {
+                mob.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.CHAINMAIL_HELMET));
+                var health = mob.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
+                if (health != null) {
+                    health.setBaseValue(mob.getMaxHealth() + 8.0 + wave * 2.0);
+                    mob.setHealth(mob.getMaxHealth());
+                }
+            }
+            return;
+        }
+        if (mob.getType() == EntityType.SPIDER || mob.getType() == EntityType.CAVE_SPIDER) {
+            var speed = mob.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED);
+            if (speed != null) {
+                speed.setBaseValue(Math.min(0.34, speed.getBaseValue() + 0.025 + wave * 0.005));
+            }
+            var health = mob.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
+            if (health != null && wave >= 2) {
+                health.setBaseValue(mob.getMaxHealth() + 5.0 + wave * 2.0);
+                mob.setHealth(mob.getMaxHealth());
+            }
+        }
+    }
+
+    private void equipZombie(ZombieEntity zombie, int wave, int index) {
         if (wave >= 2 && index % 2 == 0) {
             zombie.equipStack(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
             zombie.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.CHAINMAIL_HELMET));
@@ -660,6 +736,7 @@ public class ReviveTrialManager {
         int lightningCooldown = recoveredTrial.lightningCooldown();
 
         if (!earlyMinions && ratio <= 0.66f) {
+            playBossAnimation(player, boss, TrialBossState.SUMMONING, TrialBossAnimations.SUMMON_MINIONS, 50);
             spawnBossMinions(world, player, recoveredTrial.center(), recoveredTrial.mobIds(), 2);
             boss.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 20 * 8, 0, false, true));
             player.sendMessage(TextUtil.literal("&5El Coloso llama refuerzos del vacio."), false);
@@ -668,6 +745,9 @@ public class ReviveTrialManager {
         }
 
         if (!phaseTwo && ratio <= 0.50f) {
+            playBossAnimation(player, boss, TrialBossState.PHASE_TRANSITION, TrialBossAnimations.PHASE_TRANSITION, ModConfig.get().visuals.phaseTransitionDurationTicks);
+            TrialCinematicNetworking.sendVisualEvent(player, TrialVisualEvent.BOSS_PHASE_CHANGE, boss.getPos(), ModConfig.get().visuals.phaseTransitionDurationTicks,
+                "Fase 2", "El Coloso absorbe energia del vacio");
             spawnBossMinions(world, player, recoveredTrial.center(), recoveredTrial.mobIds(), 4);
             healBossForStageTwo(boss);
             empowerBossStageTwo(boss);
@@ -679,6 +759,7 @@ public class ReviveTrialManager {
         }
 
         if (!finalMinions && ratio <= 0.25f) {
+            playBossAnimation(player, boss, TrialBossState.SUMMONING, TrialBossAnimations.SUMMON_MINIONS, 50);
             spawnBossMinions(world, player, recoveredTrial.center(), recoveredTrial.mobIds(), 3);
             boss.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 20 * 10, 1, false, true));
             player.sendMessage(TextUtil.literal("&4El Coloso abre una grieta final."), false);
@@ -695,6 +776,7 @@ public class ReviveTrialManager {
         }
 
         if (phaseTwo && lightningCooldown <= 0) {
+            playBossAnimation(player, boss, TrialBossState.SPECIAL_ATTACKING, TrialBossAnimations.SPECIAL_ATTACK, 34);
             triggerBossLightning(world, player, boss, recoveredTrial.center());
             lightningCooldown = 14 * 20;
         }
@@ -733,11 +815,19 @@ public class ReviveTrialManager {
 
         boss.setAiDisabled(false);
         boss.setTarget(player);
+        playBossAnimation(player, boss, TrialBossState.ROARING, TrialBossAnimations.ROAR, 45);
         restoreBossCamera(world, player, trial);
         unlockPlayerAfterBossIntro(player);
         spawnBossImpactEffects(world, boss.getBlockPos(), trial.center());
         player.sendMessage(TextUtil.literal("&4El Coloso del Vacio ha descendido."), false);
         return trial.withBossIntroTicks(0).withBossCamera(null);
+    }
+
+    private void playBossAnimation(ServerPlayerEntity player, ZombieEntity boss, TrialBossState state, String animation, int durationTicks) {
+        if (boss instanceof TrialBossEntity trialBoss) {
+            trialBoss.playBossState(state, durationTicks);
+        }
+        TrialCinematicNetworking.sendBossAnimation(player, boss.getId(), animation, durationTicks);
     }
 
     private void lockPlayerForBossIntro(ServerPlayerEntity player) {
@@ -938,9 +1028,9 @@ public class ReviveTrialManager {
         BlockPos safe = getMobReturnPos(world, center);
         entity.refreshPositionAndAngles(safe.getX() + 0.5, safe.getY(), safe.getZ() + 0.5, entity.getYaw(), entity.getPitch());
         entity.setVelocity(0.0, 0.0, 0.0);
-        if (entity instanceof ZombieEntity zombie) {
-            if (world.getClosestPlayer(zombie, 64.0) instanceof ServerPlayerEntity player) {
-                zombie.setTarget(player);
+        if (entity instanceof HostileEntity hostile) {
+            if (world.getClosestPlayer(hostile, 64.0) instanceof ServerPlayerEntity player) {
+                hostile.setTarget(player);
             }
         }
     }

@@ -2,8 +2,10 @@ package com.egologic.mcextremo.manager;
 
 import com.egologic.mcextremo.MCExtremo;
 import com.egologic.mcextremo.config.ModConfig;
+import com.egologic.mcextremo.network.TrialCinematicNetworking;
 import com.egologic.mcextremo.skilltree.Skill;
 import com.egologic.mcextremo.skilltree.SkillPassiveHandler;
+import com.egologic.mcextremo.visual.TrialVisualEvent;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.boss.BossBar;
@@ -140,6 +142,8 @@ public class ZombieHordeManager {
         hordeCooldowns.put(player.getUuid(), 0);
 
         player.sendMessage(Text.literal("\u00A74\u2620 \u00A7c\u00A7l" + tier.name() + " ACTIVADA! \u00A77" + count + " zombies se dirigen hacia ti."), true);
+        TrialCinematicNetworking.sendVisualEvent(player, TrialVisualEvent.HORDE_START, player.getPos(), 70,
+            "La horda se aproxima", tier.name().replace("\u00A7e", "").replace("\u00A76", "").replace("\u00A7c", "").replace("\u00A75", "").replace("\u00A74", "").replace("\u00A7l", ""));
     }
 
     public void tick(ServerWorld world) {

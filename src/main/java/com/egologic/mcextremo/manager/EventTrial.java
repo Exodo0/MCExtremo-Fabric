@@ -37,6 +37,7 @@ class EventTrial {
     int tokens;
     boolean victoryDelay;
     UUID bossId;
+    int bossMinionConsumes;
     int bossCooldown;
     int fangsCooldown;
     int fireCooldown;
@@ -55,6 +56,7 @@ class EventTrial {
     int skullCooldown;
     int skullBurstDelay;
     int skullsInBurst;
+    Map<UUID, Long> bossSkulls = new HashMap<>();
     int bossDeathTick = -1;
     UUID dyingBossId;
     boolean regearChestsSpawned;

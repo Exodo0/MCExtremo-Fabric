@@ -2,8 +2,15 @@ package com.egologic.mcextremo.manager;
 
 import com.egologic.mcextremo.MCExtremo;
 import com.egologic.mcextremo.config.ModConfig;
+import com.egologic.mcextremo.entity.ModEntities;
+import com.egologic.mcextremo.entity.boss.TrialBossAnimations;
+import com.egologic.mcextremo.entity.boss.TrialBossEntity;
+import com.egologic.mcextremo.entity.boss.TrialBossState;
+import com.egologic.mcextremo.entity.boss.TrialGuardianSpiderEntity;
+import com.egologic.mcextremo.entity.boss.TrialGuardianSpiderState;
 import com.egologic.mcextremo.network.TrialCinematicNetworking;
 import com.egologic.mcextremo.util.TextUtil;
+import com.egologic.mcextremo.visual.TrialVisualEvent;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.entity.ChestBlockEntity;
 import net.minecraft.enchantment.EnchantmentHelper;
@@ -66,6 +73,7 @@ public class EventTrialManager {
     public static final String MOB_TAG = "mcextremo_event_trial";
 
     private static final int WAVE_DELAY_TICKS = 5 * 20;
+    private static final int BOSS_SKULL_TTL_TICKS = 5 * 20;
 
     private final MCExtremo mod;
     private EventTrial activeEvent;
@@ -209,11 +217,17 @@ public class EventTrialManager {
             return;
         }
         if (event.wave >= ModConfig.get().eventTrial.oleadas && event.bossId != null && isBossDefeated(world, event)) {
-            int consumed = consumeLivingMinions(world, event);
-            if (consumed > 0) {
+            int aliveMinions = countLivingMinions(world, event);
+            if (aliveMinions > 0 && event.bossMinionConsumes < 2) {
+                int consumed = consumeLivingMinions(world, event);
+                event.bossMinionConsumes++;
                 reviveBossFromConsumedMinions(server, world, event, consumed);
                 updateBossBar(server, event, countAliveMobs(world, event), getBoss(world, event));
                 return;
+            }
+            if (aliveMinions > 0) {
+                discardLivingMinionsWithParticles(world, event);
+                broadcast(server, "&5El Coloso intenta consumir mas esbirros, pero el Velo se rompe.");
             }
             beginBossDeath(world, event);
             updateBossBar(server, event, 0, null);
@@ -414,27 +428,22 @@ public class EventTrialManager {
         spawnWaveEffects(world, event.center, event.wave);
 
         if (event.wave >= ModConfig.get().eventTrial.oleadas) {
-            ZombieEntity boss = EntityType.ZOMBIE.create(world);
+            ZombieEntity boss = ModEntities.TRIAL_BOSS.create(world);
             if (boss != null) {
                 BlockPos spawn = findArenaSpawn(world, event.center.add(0, 4, 0), event.center);
                 boss.refreshPositionAndAngles(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5, 0.0f, 0.0f);
-                boss.addCommandTag(MOB_TAG);
-                boss.setCustomName(Text.literal("\u00A75Coloso del Evento"));
-                boss.setCustomNameVisible(true);
-                boss.setPersistent();
-                boss.equipStack(EquipmentSlot.MAINHAND, enchantedItem(Items.NETHERITE_AXE, Enchantments.SHARPNESS, 3));
-                boss.equipStack(EquipmentSlot.HEAD, enchantedItem(Items.NETHERITE_HELMET, Enchantments.PROTECTION, 3));
-                boss.equipStack(EquipmentSlot.CHEST, enchantedItem(Items.NETHERITE_CHESTPLATE, Enchantments.PROTECTION, 3));
-                boss.equipStack(EquipmentSlot.LEGS, enchantedItem(Items.NETHERITE_LEGGINGS, Enchantments.PROTECTION, 3));
-                boss.equipStack(EquipmentSlot.FEET, enchantedItem(Items.NETHERITE_BOOTS, Enchantments.PROTECTION, 3));
+                configureEventBoss(boss, event);
+                if (boss instanceof TrialBossEntity trialBoss) {
+                    trialBoss.playBossState(TrialBossState.SPAWNING, ModConfig.get().visuals.bossIntroDurationTicks);
+                }
                 world.spawnEntity(boss);
-                setAttr(boss, EntityAttributes.GENERIC_MAX_HEALTH, 260.0 + event.initialPlayers * 65.0);
-                setAttr(boss, EntityAttributes.GENERIC_ATTACK_DAMAGE, 9.0 + event.initialPlayers * 0.75);
-                setAttr(boss, EntityAttributes.GENERIC_ARMOR, 12.0);
                 boss.setHealth(boss.getMaxHealth());
-                boss.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, 20 * 60 * 10, 1, false, true));
                 event.bossId = boss.getUuid();
+                event.bossMinionConsumes = 0;
                 event.mobs.add(boss.getUuid());
+                sendVisualToParticipants(world.getServer(), event, TrialVisualEvent.BOSS_INTRO, boss.getPos(), ModConfig.get().visuals.bossIntroDurationTicks,
+                    "Coloso del Evento", "La arena despierta");
+                sendBossAnimationToParticipants(world.getServer(), event, boss, TrialBossAnimations.SPAWN_INTRO, ModConfig.get().visuals.bossIntroDurationTicks);
                 broadcast(world.getServer(), "&5El Coloso del Evento ha aparecido.");
             }
             return;
@@ -456,10 +465,13 @@ public class EventTrialManager {
             targetNearestParticipant(mob);
             event.mobs.add(mob.getUuid());
         }
+        sendVisualToParticipants(world.getServer(), event, TrialVisualEvent.HORDE_START, Vec3d.ofCenter(event.center), 55,
+            "Oleada " + event.wave, "La arena invoca enemigos");
         broadcast(world.getServer(), "&5Oleada &e" + event.wave + "&5/" + ModConfig.get().eventTrial.oleadas + " &7- &c" + amount + " enemigos.");
     }
 
     private void tickBoss(MinecraftServer server, ServerWorld world, EventTrial event) {
+        cleanupBossSkulls(world, event);
         ZombieEntity boss = getBoss(world, event);
         if (boss == null || !boss.isAlive()) return;
         if (event.bossPhaseThree) {
@@ -473,6 +485,9 @@ public class EventTrialManager {
         float ratio = boss.getHealth() / Math.max(1.0f, boss.getMaxHealth());
         if (!event.bossPhaseTwo && ratio <= 0.50f) {
             event.bossPhaseTwo = true;
+            playEventBossAnimation(world.getServer(), event, boss, TrialBossState.PHASE_TRANSITION, TrialBossAnimations.PHASE_TRANSITION, ModConfig.get().visuals.phaseTransitionDurationTicks);
+            sendVisualToParticipants(server, event, TrialVisualEvent.BOSS_PHASE_CHANGE, boss.getPos(), ModConfig.get().visuals.phaseTransitionDurationTicks,
+                "Fase 2", "El Coloso rompe sus limites");
             boss.setHealth(Math.min(boss.getMaxHealth(), boss.getHealth() + boss.getMaxHealth() * 0.50f));
             boss.addStatusEffect(new StatusEffectInstance(StatusEffects.STRENGTH, 20 * 60 * 5, 1, false, true));
             boss.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 20 * 20, 1, false, true));
@@ -486,18 +501,22 @@ public class EventTrialManager {
         }
 
         if (--event.bossCooldown <= 0) {
+            playEventBossAnimation(server, event, boss, TrialBossState.SUMMONING, TrialBossAnimations.SUMMON_MINIONS, 45);
             spawnBossMinions(world, event, event.bossPhaseFour ? 3 : event.bossPhaseTwo ? 4 : 3);
             event.bossCooldown = event.bossPhaseFour ? 12 * 20 : event.bossPhaseTwo ? 13 * 20 : 16 * 20;
         }
         if (--event.fangsCooldown <= 0) {
+            playEventBossAnimation(server, event, boss, TrialBossState.SPECIAL_ATTACKING, TrialBossAnimations.SPECIAL_ATTACK, 32);
             castFangs(world, event, event.bossPhaseTwo);
             event.fangsCooldown = event.bossPhaseFour ? 12 * 20 : event.bossPhaseTwo ? 15 * 20 : 18 * 20;
         }
         if (--event.fireCooldown <= 0) {
+            playEventBossAnimation(server, event, boss, TrialBossState.SPECIAL_ATTACKING, TrialBossAnimations.SPECIAL_ATTACK, 32);
             castFireCone(world, event, boss, event.bossPhaseTwo);
             event.fireCooldown = event.bossPhaseFour ? 10 * 20 : event.bossPhaseTwo ? 12 * 20 : 15 * 20;
         }
         if (--event.comboCooldown <= 0) {
+            playEventBossAnimation(server, event, boss, TrialBossState.ATTACKING, TrialBossAnimations.BASIC_ATTACK, 28);
             executeBossCombo(server, world, event, boss);
             event.comboCooldown = event.bossPhaseFour ? 14 * 20 : event.bossPhaseTwo ? 16 * 20 : 20 * 20;
         }
@@ -532,12 +551,44 @@ public class EventTrialManager {
         return consumed;
     }
 
+    private int countLivingMinions(ServerWorld world, EventTrial event) {
+        int alive = 0;
+        for (UUID uuid : new HashSet<>(event.mobs)) {
+            if (uuid.equals(event.bossId)) continue;
+            Entity entity = world.getEntity(uuid);
+            if (entity == null || !entity.isAlive()) {
+                event.mobs.remove(uuid);
+                continue;
+            }
+            alive++;
+        }
+        return alive;
+    }
+
+    private void discardLivingMinionsWithParticles(ServerWorld world, EventTrial event) {
+        for (UUID uuid : new HashSet<>(event.mobs)) {
+            if (uuid.equals(event.bossId)) continue;
+            Entity entity = world.getEntity(uuid);
+            if (entity == null || !entity.isAlive()) {
+                event.mobs.remove(uuid);
+                continue;
+            }
+            Vec3d pos = entity.getPos();
+            world.spawnParticles(ParticleTypes.SOUL_FIRE_FLAME, pos.x, pos.y + entity.getHeight() * 0.5, pos.z,
+                18, 0.35, 0.45, 0.35, 0.05);
+            world.spawnParticles(ParticleTypes.SMOKE, pos.x, pos.y + entity.getHeight() * 0.5, pos.z,
+                12, 0.35, 0.35, 0.35, 0.03);
+            entity.discard();
+            event.mobs.remove(uuid);
+        }
+    }
+
     private void reviveBossFromConsumedMinions(MinecraftServer server, ServerWorld world, EventTrial event, int consumed) {
         Entity oldBoss = event.bossId == null ? null : world.getEntity(event.bossId);
         if (oldBoss != null) {
             oldBoss.discard();
         }
-        ZombieEntity boss = EntityType.ZOMBIE.create(world);
+        ZombieEntity boss = ModEntities.TRIAL_BOSS.create(world);
         if (boss == null) {
             beginBossDeath(world, event);
             return;
@@ -552,11 +603,12 @@ public class EventTrialManager {
         boss.setHealth(Math.max(30.0f, revivedHealth));
         event.bossId = boss.getUuid();
         event.mobs.add(boss.getUuid());
+        playEventBossAnimation(server, event, boss, TrialBossState.SPECIAL_ATTACKING, TrialBossAnimations.SPECIAL_ATTACK, 50);
         event.bossCooldown = Math.max(event.bossCooldown, 6 * 20);
         spawnBossPhaseBurst(world, boss);
         spawnLightning(world, boss.getBlockPos());
         world.playSound(null, boss.getBlockPos(), SoundEvents.ENTITY_WITHER_SPAWN, SoundCategory.HOSTILE, 1.2f, 0.55f);
-        broadcast(server, "&5El Coloso consume a sus esbirros y se aferra al Velo. &7(" + consumed + " consumido(s))");
+        broadcast(server, "&5El Coloso consume a sus esbirros y se aferra al Velo. &7(" + event.bossMinionConsumes + "/2, " + consumed + " consumido(s))");
     }
 
     private void configureEventBoss(ZombieEntity boss, EventTrial event) {
@@ -585,6 +637,9 @@ public class EventTrialManager {
 
     private void startVeilPhase(MinecraftServer server, ServerWorld world, EventTrial event, ZombieEntity boss) {
         event.bossPhaseThree = true;
+        playEventBossAnimation(server, event, boss, TrialBossState.PHASE_TRANSITION, TrialBossAnimations.PHASE_TRANSITION, ModConfig.get().visuals.phaseTransitionDurationTicks);
+        sendVisualToParticipants(server, event, TrialVisualEvent.BOSS_PHASE_CHANGE, boss.getPos(), ModConfig.get().visuals.phaseTransitionDurationTicks,
+            "El Velo", "Derroten al guardian antes de que regenere");
         event.veilTransitionTick = 0;
         event.veilTransitionDone = false;
         event.furyTransitionActive = false;
@@ -627,6 +682,12 @@ public class EventTrialManager {
             startFuryPhase(server, world, event, boss);
         } else {
             targetNearestParticipant(spider);
+            if (spider instanceof TrialGuardianSpiderEntity animatedGuardian
+                && spider.getTarget() != null
+                && spider.squaredDistanceTo(spider.getTarget()) <= 9.0
+                && world.getTime() % 24L == 0L) {
+                animatedGuardian.playGuardianState(TrialGuardianSpiderState.ATTACK, 18);
+            }
             if (world.getTime() % 200L == 0L) {
                 spider.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 20 * 60 * 5, 0, false, true));
             }
@@ -647,6 +708,7 @@ public class EventTrialManager {
     private void completeFuryPhase(MinecraftServer server, ServerWorld world, EventTrial event, ZombieEntity boss) {
         event.bossPhaseThree = false;
         event.bossPhaseFour = true;
+        playEventBossAnimation(server, event, boss, TrialBossState.ROARING, TrialBossAnimations.ROAR, 50);
         event.furyTransitionActive = false;
         BlockPos landing = event.furyLanding != null ? event.furyLanding : findArenaSpawn(world, event.center.add(0, 3, 0), event.center);
         boss.teleport(landing.getX() + 0.5, landing.getY(), landing.getZ() + 0.5);
@@ -739,7 +801,7 @@ public class EventTrialManager {
     }
 
     private void spawnVeilGuardian(MinecraftServer server, ServerWorld world, EventTrial event) {
-        SpiderEntity guardian = EntityType.SPIDER.create(world);
+        SpiderEntity guardian = ModEntities.TRIAL_GUARDIAN_SPIDER.create(world);
         if (guardian == null) return;
         BlockPos spawn = findArenaSpawn(world, event.center.add(0, 3, 0), event.center);
         guardian.refreshPositionAndAngles(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5, 0.0f, 0.0f);
@@ -755,6 +817,9 @@ public class EventTrialManager {
         guardian.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, 20 * 60 * 5, 0, false, true));
         guardian.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 20 * 60 * 5, 0, false, true));
         guardian.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 20 * 60 * 5, 0, false, true));
+        if (guardian instanceof TrialGuardianSpiderEntity animatedGuardian) {
+            animatedGuardian.playGuardianState(TrialGuardianSpiderState.SUMMON, 50);
+        }
         targetNearestParticipant(guardian);
         event.veilGuardianId = guardian.getUuid();
         event.mobs.add(guardian.getUuid());
@@ -1043,6 +1108,12 @@ public class EventTrialManager {
         event.dyingBossId = event.bossId;
         ZombieEntity boss = getBoss(world, event);
         if (boss != null) {
+            if (boss instanceof TrialBossEntity trialBoss) {
+                trialBoss.playBossState(TrialBossState.DYING, ModConfig.get().visuals.bossDeathDurationTicks);
+            }
+            sendVisualToParticipants(world.getServer(), event, TrialVisualEvent.BOSS_DEATH, boss.getPos(), ModConfig.get().visuals.bossDeathDurationTicks,
+                "Coloso derrotado", "La arena se libera");
+            sendBossAnimationToParticipants(world.getServer(), event, boss, TrialBossAnimations.DEATH, ModConfig.get().visuals.bossDeathDurationTicks);
             boss.setInvulnerable(true);
             boss.setAiDisabled(true);
             boss.setVelocity(0.0, 0.0, 0.0);
@@ -1083,7 +1154,7 @@ public class EventTrialManager {
             }
         }
 
-        if (tick >= 40) {
+        if (tick >= ModConfig.get().visuals.bossDeathDurationTicks) {
             if (entity != null) entity.discard();
             event.bossDeathTick = -1;
             event.dyingBossId = null;
@@ -1193,7 +1264,26 @@ public class EventTrialManager {
         skull.setVelocity(direction.multiply(1.15));
         skull.addCommandTag(MOB_TAG);
         world.spawnEntity(skull);
+        event.bossSkulls.put(skull.getUuid(), world.getTime() + BOSS_SKULL_TTL_TICKS);
         world.playSound(null, boss.getBlockPos(), SoundEvents.ENTITY_WITHER_SHOOT, SoundCategory.HOSTILE, 0.9f, 1.2f);
+    }
+
+    private void cleanupBossSkulls(ServerWorld world, EventTrial event) {
+        for (Map.Entry<UUID, Long> entry : new HashSet<>(event.bossSkulls.entrySet())) {
+            Entity entity = world.getEntity(entry.getKey());
+            if (entity == null || !entity.isAlive()) {
+                event.bossSkulls.remove(entry.getKey());
+                continue;
+            }
+            boolean expired = world.getTime() >= entry.getValue();
+            boolean outsideArena = !isInsideArena(entity.getBlockPos(), event.center, ModConfig.get().eventTrial.radioArena + 10);
+            boolean stalled = entity.getVelocity().lengthSquared() < 0.0008 && world.getTime() >= entry.getValue() - 40;
+            if (expired || outsideArena || stalled) {
+                world.spawnParticles(ParticleTypes.SMOKE, entity.getX(), entity.getY(), entity.getZ(), 8, 0.2, 0.2, 0.2, 0.02);
+                entity.discard();
+                event.bossSkulls.remove(entry.getKey());
+            }
+        }
     }
 
     private boolean castAntiCampCombo(ServerWorld world, EventTrial event, ZombieEntity boss) {
@@ -1642,6 +1732,12 @@ public class EventTrialManager {
         cinematicController.discardIntroActors(world, event);
         cinematicController.discardIntroCamera(world, event);
         cleanupRegearChests(world, event);
+        cleanupBossSkulls(world, event);
+        for (UUID uuid : new HashSet<>(event.bossSkulls.keySet())) {
+            Entity entity = world.getEntity(uuid);
+            if (entity != null) entity.discard();
+            event.bossSkulls.remove(uuid);
+        }
         discardMobs(world, event.mobs);
         Box box = new Box(event.center).expand(ModConfig.get().eventTrial.radioArena + 20, 40, ModConfig.get().eventTrial.radioArena + 20);
         for (Entity entity : world.getEntitiesByClass(Entity.class, box, entity -> !(entity instanceof ServerPlayerEntity))) {
@@ -1758,6 +1854,12 @@ public class EventTrialManager {
             && !world.getBlockState(feet.down()).isOf(Blocks.BARRIER)
             && !world.getBlockState(feet.down()).isOf(Blocks.LADDER)
             && world.getBlockState(feet.up(2)).isAir();
+    }
+
+    private boolean isInsideArena(BlockPos pos, BlockPos center, int radius) {
+        double dx = pos.getX() + 0.5 - (center.getX() + 0.5);
+        double dz = pos.getZ() + 0.5 - (center.getZ() + 0.5);
+        return dx * dx + dz * dz <= radius * radius;
     }
 
     private BlockPos findGround(ServerWorld world, BlockPos pos, BlockPos center) {
@@ -1916,6 +2018,33 @@ public class EventTrialManager {
             ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
             if (player != null) {
                 player.sendMessage(TextUtil.literal(message), true);
+            }
+        }
+    }
+
+    private void playEventBossAnimation(MinecraftServer server, EventTrial event, ZombieEntity boss, TrialBossState state, String animation, int durationTicks) {
+        if (boss instanceof TrialBossEntity trialBoss) {
+            trialBoss.playBossState(state, durationTicks);
+        }
+        sendBossAnimationToParticipants(server, event, boss, animation, durationTicks);
+    }
+
+    private void sendBossAnimationToParticipants(MinecraftServer server, EventTrial event, ZombieEntity boss, String animation, int durationTicks) {
+        if (server == null) return;
+        for (UUID uuid : event.participants) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
+            if (player != null) {
+                TrialCinematicNetworking.sendBossAnimation(player, boss.getId(), animation, durationTicks);
+            }
+        }
+    }
+
+    private void sendVisualToParticipants(MinecraftServer server, EventTrial event, TrialVisualEvent visual, Vec3d pos, int durationTicks, String title, String subtitle) {
+        if (server == null) return;
+        for (UUID uuid : event.participants) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
+            if (player != null) {
+                TrialCinematicNetworking.sendVisualEvent(player, visual, pos, durationTicks, title, subtitle);
             }
         }
     }
