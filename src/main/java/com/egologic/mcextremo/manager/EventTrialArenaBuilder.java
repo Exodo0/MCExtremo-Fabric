@@ -1,10 +1,12 @@
 package com.egologic.mcextremo.manager;
 
-import com.egologic.mcextremo.util.TextUtil;
 import net.minecraft.block.Blocks;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
+
+import java.util.ArrayList;
+import java.util.List;
 
 class EventTrialArenaBuilder {
     boolean processArenaBuild(ServerWorld world, EventArenaBuildTask task, int columnBudget) {
@@ -33,6 +35,7 @@ class EventTrialArenaBuilder {
         }
         return true;
     }
+
     private boolean advanceArenaCursor(EventArenaBuildTask task, int limit) {
         task.dz++;
         if (task.dz <= limit) return false;
@@ -40,6 +43,7 @@ class EventTrialArenaBuilder {
         task.dx++;
         return task.dx > limit;
     }
+
     void updateGenerationBar(EventTrial event) {
         if (event.arenaBuild == null) return;
         int radius = event.arenaBuild.radius;
@@ -58,6 +62,7 @@ class EventTrialArenaBuilder {
         event.bossBar.setPercent(percent);
         event.bossBar.setName(Text.literal("\u00A75Event Trial \u00A77| \u00A7fGenerando arena \u00A78- \u00A7e" + Math.round(percent * 100.0f) + "%"));
     }
+
     void generateArena(ServerWorld world, BlockPos center, int radius) {
         clearArena(world, center, radius);
         for (int dx = -radius; dx <= radius; dx++) {
@@ -67,6 +72,7 @@ class EventTrialArenaBuilder {
         }
         buildArenaStructures(world, center, radius);
     }
+
     void clearArenaColumn(ServerWorld world, BlockPos center, int radius, int dx, int dz) {
         int r = radius + 10;
         if (dx * dx + dz * dz > r * r) return;
@@ -74,6 +80,7 @@ class EventTrialArenaBuilder {
             world.setBlockState(center.add(dx, dy, dz), Blocks.AIR.getDefaultState());
         }
     }
+
     private void buildArenaBaseColumn(ServerWorld world, BlockPos center, int radius, int dx, int dz) {
         double distance = Math.sqrt(dx * dx + dz * dz);
         if (distance > radius) return;
@@ -81,263 +88,361 @@ class EventTrialArenaBuilder {
         for (int dy = 0; dy < thickness; dy++) {
             world.setBlockState(center.add(dx, -dy, dz), Blocks.END_STONE.getDefaultState());
         }
-        if (distance <= radius - 5) {
-            world.setBlockState(center.add(dx, 1, dz),
-                (Math.abs(dx * 13 + dz * 7) % 11 == 0 ? Blocks.PURPUR_BLOCK : Blocks.END_STONE_BRICKS).getDefaultState());
-        }
-        if (distance > radius - 4) {
-            world.setBlockState(center.add(dx, 1, dz), Blocks.END_STONE_BRICKS.getDefaultState());
-        }
+        world.setBlockState(center.add(dx, 1, dz),
+            (distance <= radius - 6 ? Blocks.END_STONE_BRICKS : Blocks.OBSIDIAN).getDefaultState());
     }
+
     private void buildArenaStructures(ServerWorld world, BlockPos center, int radius) {
-        buildCentralPlatform(world, center);
-        buildRunicRings(world, center, radius);
+        List<BlockPos> occupied = new ArrayList<>();
+        buildRunicFloor(world, center);
         buildLandingPads(world, center, radius);
-        buildTower(world, center.add(radius - 18, 2, 0), 7, 16);
-        buildTower(world, center.add(-radius + 18, 2, 0), 7, 16);
-        buildTower(world, center.add(0, 2, radius - 18), 7, 16);
-        buildTower(world, center.add(0, 2, -radius + 18), 7, 16);
-        buildTower(world, center.add(radius - 24, 2, radius - 24), 5, 10);
-        buildTower(world, center.add(-radius + 24, 2, radius - 24), 5, 10);
-        buildTower(world, center.add(radius - 24, 2, -radius + 24), 5, 10);
-        buildTower(world, center.add(-radius + 24, 2, -radius + 24), 5, 10);
-        buildBridge(world, center, radius, 1, 0);
-        buildBridge(world, center, radius, -1, 0);
-        buildBridge(world, center, radius, 0, 1);
-        buildBridge(world, center, radius, 0, -1);
-        buildRitualObelisks(world, center, radius);
-        buildOuterCrystals(world, center, radius);
-        buildLightPylons(world, center, radius);
-        buildBrokenArches(world, center, radius);
-        buildLowRuins(world, center, radius);
-        buildCorruptedVeins(world, center, radius);
-        buildMinorAltars(world, center, radius);
-        buildCover(world, center, radius);
+        buildCentralArena(world, center);
+        buildCentralMonuments(world, center, occupied);
+        buildObeliskRing(world, center, occupied);
+        buildCardinalTowers(world, center, radius, occupied);
+        buildDiagonalArches(world, center, radius, occupied);
+        buildCoverScatter(world, center, occupied);
+        buildEntryRamps(world, center, radius);
+        buildOuterWall(world, center, radius);
         buildBarrierWall(world, center, radius);
     }
-    private void buildCentralPlatform(ServerWorld world, BlockPos center) {
-        for (int dx = -10; dx <= 10; dx++) {
-            for (int dz = -10; dz <= 10; dz++) {
-                if (Math.sqrt(dx * dx + dz * dz) > 11) continue;
-                world.setBlockState(center.add(dx, 2, dz), Blocks.PURPUR_BLOCK.getDefaultState());
-            }
-        }
-        for (int i = 0; i < 4; i++) {
-            int x = i < 2 ? (i == 0 ? 8 : -8) : 0;
-            int z = i >= 2 ? (i == 2 ? 8 : -8) : 0;
-            world.setBlockState(center.add(x, 3, z), Blocks.END_ROD.getDefaultState());
-        }
+
+    private void buildRunicFloor(ServerWorld world, BlockPos center) {
+        buildRunicRing(world, center, 20, 1);
+        buildRunicRing(world, center, 38, 3);
+        buildRunicRing(world, center, 56, 5);
     }
-    private void buildTower(ServerWorld world, BlockPos base, int half, int height) {
-        for (int y = 0; y <= height; y++) {
-            for (int dx = -half; dx <= half; dx++) {
-                for (int dz = -half; dz <= half; dz++) {
-                    boolean wall = Math.abs(dx) == half || Math.abs(dz) == half;
-                    boolean floor = y % 5 == 0;
-                    boolean doorway = y <= 3 && (Math.abs(dx) <= 2 || Math.abs(dz) <= 2);
-                    if ((floor || wall) && !doorway) {
-                        world.setBlockState(base.add(dx, y, dz), (y % 10 == 0 ? Blocks.PURPUR_BLOCK : Blocks.END_STONE_BRICKS).getDefaultState());
-                    }
-                }
-            }
-        }
-        for (int y = 0; y <= height; y++) {
-            world.setBlockState(base.add(0, y, 0), Blocks.LADDER.getDefaultState());
-        }
-        world.setBlockState(base.add(0, height + 1, 0), Blocks.END_ROD.getDefaultState());
-    }
-    private void buildBridge(ServerWorld world, BlockPos center, int radius, int dirX, int dirZ) {
-        for (int i = 10; i < radius - 12; i++) {
-            for (int w = -3; w <= 3; w++) {
-                int x = dirX * i + (dirZ == 0 ? 0 : w);
-                int z = dirZ * i + (dirX == 0 ? 0 : w);
-                world.setBlockState(center.add(x, 2, z), Blocks.END_STONE_BRICKS.getDefaultState());
+
+    private void buildRunicRing(ServerWorld world, BlockPos center, int ring, int spacing) {
+        int points = Math.max(48, (int) Math.round(Math.PI * 2.0 * ring));
+        for (int i = 0; i < points; i++) {
+            double angle = Math.PI * 2.0 * i / points;
+            int x = (int) Math.round(Math.cos(angle) * ring);
+            int z = (int) Math.round(Math.sin(angle) * ring);
+            boolean purpur = spacing > 1 && (i / spacing) % 2 == 1;
+            BlockPos pos = center.add(x, 1, z);
+            world.setBlockState(pos, (purpur ? Blocks.PURPUR_BLOCK : Blocks.CRYING_OBSIDIAN).getDefaultState());
+            if (purpur) {
+                world.setBlockState(pos.up(), Blocks.END_ROD.getDefaultState());
             }
         }
     }
-    private void buildCover(ServerWorld world, BlockPos center, int radius) {
-        int[][] points = {{22, 18}, {-22, 18}, {22, -18}, {-22, -18}, {36, 0}, {-36, 0}, {0, 36}, {0, -36}};
-        for (int[] point : points) {
-            BlockPos base = center.add(point[0], 2, point[1]);
-            for (int dx = -4; dx <= 4; dx++) {
-                for (int dz = -2; dz <= 2; dz++) {
-                    world.setBlockState(base.add(dx, 0, dz), Blocks.END_STONE_BRICKS.getDefaultState());
-                }
-            }
-            for (int y = 1; y <= 3; y++) {
-                world.setBlockState(base.add(-4, y, 0), Blocks.OBSIDIAN.getDefaultState());
-                world.setBlockState(base.add(4, y, 0), Blocks.OBSIDIAN.getDefaultState());
-            }
-        }
-    }
-    private void buildRunicRings(ServerWorld world, BlockPos center, int radius) {
-        int[] rings = {16, 28, 44};
-        for (int ring : rings) {
-            int points = ring < 20 ? 48 : 72;
-            for (int i = 0; i < points; i++) {
-                double angle = Math.PI * 2.0 * i / points;
-                int x = (int) Math.round(Math.cos(angle) * ring);
-                int z = (int) Math.round(Math.sin(angle) * ring);
-                BlockPos pos = center.add(x, 2, z);
-                if (x * x + z * z >= (radius - 7) * (radius - 7)) continue;
-                boolean accent = i % 6 == 0;
-                world.setBlockState(pos, (accent ? Blocks.CRYING_OBSIDIAN : Blocks.PURPUR_BLOCK).getDefaultState());
-                if (accent && ring != 44) {
-                    world.setBlockState(pos.up(), Blocks.END_ROD.getDefaultState());
-                }
-            }
-        }
-    }
+
     private void buildLandingPads(ServerWorld world, BlockPos center, int radius) {
-        int padRadius = Math.min(24, Math.max(12, radius / 4));
+        int padRadius = Math.max(18, radius / 3);
         for (int i = 0; i < 12; i++) {
             double angle = Math.PI * 2.0 * i / 12.0;
-            BlockPos pad = center.add((int) Math.round(Math.cos(angle) * padRadius), 2, (int) Math.round(Math.sin(angle) * padRadius));
+            BlockPos pad = center.add((int) Math.round(Math.cos(angle) * padRadius), 2,
+                (int) Math.round(Math.sin(angle) * padRadius));
             for (int dx = -3; dx <= 3; dx++) {
                 for (int dz = -3; dz <= 3; dz++) {
                     double distance = Math.sqrt(dx * dx + dz * dz);
                     if (distance > 3.2) continue;
-                    world.setBlockState(pad.add(dx, 0, dz), (distance > 2.4 ? Blocks.CRYING_OBSIDIAN : Blocks.END_STONE_BRICKS).getDefaultState());
+                    world.setBlockState(pad.add(dx, 0, dz),
+                        (distance > 2.4 ? Blocks.CRYING_OBSIDIAN : Blocks.END_STONE_BRICKS).getDefaultState());
                 }
             }
             world.setBlockState(pad.up(), Blocks.END_ROD.getDefaultState());
         }
     }
-    private void buildRitualObelisks(ServerWorld world, BlockPos center, int radius) {
-        int obeliskRadius = Math.min(radius - 28, 46);
+
+    private void buildCentralArena(ServerWorld world, BlockPos center) {
+        for (int dx = -18; dx <= 18; dx++) {
+            for (int dz = -18; dz <= 18; dz++) {
+                double distance = Math.sqrt(dx * dx + dz * dz);
+                if (distance > 18.2) continue;
+
+                BlockPos floor = center.add(dx, 2, dz);
+                if (distance <= 4.2) {
+                    world.setBlockState(floor, Blocks.OBSIDIAN.getDefaultState());
+                } else if (distance <= 14.2) {
+                    world.setBlockState(floor,
+                        (Math.floorMod(dx + dz, 4) < 2 ? Blocks.PURPUR_PILLAR : Blocks.PURPUR_BLOCK).getDefaultState());
+                } else {
+                    world.setBlockState(floor, Blocks.OBSIDIAN.getDefaultState());
+                    if (distance >= 16.0) {
+                        world.setBlockState(floor.up(), Blocks.OBSIDIAN.getDefaultState());
+                    }
+                }
+            }
+        }
+
+        int points = 96;
+        for (int i = 0; i < points; i++) {
+            double angle = Math.PI * 2.0 * i / points;
+            int x = (int) Math.round(Math.cos(angle) * 14.0);
+            int z = (int) Math.round(Math.sin(angle) * 14.0);
+            BlockPos pos = center.add(x, 2, z);
+            world.setBlockState(pos, Blocks.CRYING_OBSIDIAN.getDefaultState());
+            if (i % 4 == 0) {
+                world.setBlockState(pos.up(), Blocks.END_ROD.getDefaultState());
+            }
+        }
+
+        int[][] cardinal = {{2, 0}, {-2, 0}, {0, 2}, {0, -2}};
+        for (int[] point : cardinal) {
+            world.setBlockState(center.add(point[0], 2, point[1]), Blocks.CRYING_OBSIDIAN.getDefaultState());
+        }
+    }
+
+    private void buildCentralMonuments(ServerWorld world, BlockPos center, List<BlockPos> occupied) {
+        int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int[] dir : dirs) {
+            BlockPos base = center.add(dir[0] * 12, 2, dir[1] * 12);
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    world.setBlockState(base.add(dx, 0, dz), Blocks.END_STONE_BRICKS.getDefaultState());
+                }
+            }
+            for (int y = 1; y <= 6; y++) {
+                world.setBlockState(base.up(y), Blocks.PURPUR_PILLAR.getDefaultState());
+                if (y == 2 || y == 4) {
+                    int sideX = dir[1] == 0 ? 0 : 1;
+                    int sideZ = dir[0] == 0 ? 0 : 1;
+                    world.setBlockState(base.add(sideX, y, sideZ), Blocks.PURPUR_BLOCK.getDefaultState());
+                    world.setBlockState(base.add(-sideX, y, -sideZ), Blocks.PURPUR_BLOCK.getDefaultState());
+                }
+            }
+            world.setBlockState(base.add(0, 7, 0), Blocks.CRYING_OBSIDIAN.getDefaultState());
+            world.setBlockState(base.add(0, 8, 0), Blocks.END_ROD.getDefaultState());
+            occupied.add(base);
+        }
+    }
+
+    private void buildObeliskRing(ServerWorld world, BlockPos center, List<BlockPos> occupied) {
         for (int i = 0; i < 8; i++) {
             double angle = Math.PI * 2.0 * i / 8.0;
-            BlockPos base = center.add((int) Math.round(Math.cos(angle) * obeliskRadius), 2, (int) Math.round(Math.sin(angle) * obeliskRadius));
-            int height = i % 2 == 0 ? 9 : 7;
+            BlockPos base = center.add((int) Math.round(Math.cos(angle) * 38.0), 2,
+                (int) Math.round(Math.sin(angle) * 38.0));
+            int height = i % 2 == 0 ? 12 : 9;
             for (int y = 0; y < height; y++) {
-                world.setBlockState(base.add(0, y, 0), (y % 3 == 0 ? Blocks.CRYING_OBSIDIAN : Blocks.OBSIDIAN).getDefaultState());
-            }
-            world.setBlockState(base.add(0, height, 0), Blocks.END_ROD.getDefaultState());
-            world.setBlockState(base.add(1, 1, 0), Blocks.PURPUR_BLOCK.getDefaultState());
-            world.setBlockState(base.add(-1, 1, 0), Blocks.PURPUR_BLOCK.getDefaultState());
-            world.setBlockState(base.add(0, 1, 1), Blocks.PURPUR_BLOCK.getDefaultState());
-            world.setBlockState(base.add(0, 1, -1), Blocks.PURPUR_BLOCK.getDefaultState());
-        }
-    }
-    private void buildOuterCrystals(ServerWorld world, BlockPos center, int radius) {
-        int crystalRadius = radius - 9;
-        for (int i = 0; i < 16; i++) {
-            double angle = Math.PI * 2.0 * i / 16.0;
-            BlockPos base = center.add((int) Math.round(Math.cos(angle) * crystalRadius), 2, (int) Math.round(Math.sin(angle) * crystalRadius));
-            int height = 3 + i % 4;
-            for (int y = 0; y < height; y++) {
-                world.setBlockState(base.add(0, y, 0), (y == height - 1 ? Blocks.PURPUR_BLOCK : Blocks.OBSIDIAN).getDefaultState());
-            }
-            if (i % 2 == 0) {
-                world.setBlockState(base.add(1, 0, 0), Blocks.CRYING_OBSIDIAN.getDefaultState());
-                world.setBlockState(base.add(-1, 0, 0), Blocks.CRYING_OBSIDIAN.getDefaultState());
-            }
-        }
-    }
-    private void buildLightPylons(ServerWorld world, BlockPos center, int radius) {
-        int pylonRadius = Math.min(radius - 18, 58);
-        for (int i = 0; i < 12; i++) {
-            double angle = Math.PI * 2.0 * i / 12.0 + Math.PI / 12.0;
-            BlockPos base = center.add((int) Math.round(Math.cos(angle) * pylonRadius), 2, (int) Math.round(Math.sin(angle) * pylonRadius));
-            for (int y = 0; y <= 5; y++) {
-                world.setBlockState(base.add(0, y, 0), (y == 5 ? Blocks.END_ROD : Blocks.PURPUR_PILLAR).getDefaultState());
-            }
-            world.setBlockState(base.add(1, 0, 0), Blocks.END_STONE_BRICKS.getDefaultState());
-            world.setBlockState(base.add(-1, 0, 0), Blocks.END_STONE_BRICKS.getDefaultState());
-            world.setBlockState(base.add(0, 0, 1), Blocks.END_STONE_BRICKS.getDefaultState());
-            world.setBlockState(base.add(0, 0, -1), Blocks.END_STONE_BRICKS.getDefaultState());
-        }
-    }
-    private void buildBrokenArches(ServerWorld world, BlockPos center, int radius) {
-        int archRadius = Math.min(radius - 30, 38);
-        for (int i = 0; i < 8; i++) {
-            double angle = Math.PI * 2.0 * i / 8.0 + Math.PI / 8.0;
-            BlockPos base = center.add((int) Math.round(Math.cos(angle) * archRadius), 2, (int) Math.round(Math.sin(angle) * archRadius));
-            boolean alongX = Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle));
-            for (int side = -1; side <= 1; side += 2) {
-                for (int y = 0; y <= 4; y++) {
-                    BlockPos pillar = alongX ? base.add(side * 3, y, 0) : base.add(0, y, side * 3);
-                    world.setBlockState(pillar, (y % 2 == 0 ? Blocks.END_STONE_BRICKS : Blocks.PURPUR_PILLAR).getDefaultState());
+                if (y == height - 1) {
+                    world.setBlockState(base.up(y), Blocks.END_ROD.getDefaultState());
+                } else if (y == height - 2) {
+                    world.setBlockState(base.up(y), Blocks.CRYING_OBSIDIAN.getDefaultState());
+                } else {
+                    world.setBlockState(base.up(y), Blocks.OBSIDIAN.getDefaultState());
+                }
+                if (y == 1 || y == 4) {
+                    world.setBlockState(base.add(1, y, 0), Blocks.PURPUR_BLOCK.getDefaultState());
+                    world.setBlockState(base.add(-1, y, 0), Blocks.PURPUR_BLOCK.getDefaultState());
+                    world.setBlockState(base.add(0, y, 1), Blocks.PURPUR_BLOCK.getDefaultState());
+                    world.setBlockState(base.add(0, y, -1), Blocks.PURPUR_BLOCK.getDefaultState());
                 }
             }
-            for (int w = -2; w <= 2; w++) {
-                if (i % 2 == 0 && Math.abs(w) == 2) continue;
-                BlockPos top = alongX ? base.add(w, 5, 0) : base.add(0, 5, w);
+            world.setBlockState(base.add(2, 0, 0), Blocks.END_STONE_BRICKS.getDefaultState());
+            world.setBlockState(base.add(-2, 0, 0), Blocks.END_STONE_BRICKS.getDefaultState());
+            world.setBlockState(base.add(0, 0, 2), Blocks.END_STONE_BRICKS.getDefaultState());
+            world.setBlockState(base.add(0, 0, -2), Blocks.END_STONE_BRICKS.getDefaultState());
+            occupied.add(base);
+        }
+    }
+
+    private void buildCardinalTowers(ServerWorld world, BlockPos center, int radius, List<BlockPos> occupied) {
+        int towerRadius = Math.min(50, Math.max(30, radius - 30));
+        int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int[] dir : dirs) {
+            BlockPos base = center.add(dir[0] * towerRadius, 2, dir[1] * towerRadius);
+            int half = 4;
+            for (int dx = -half; dx <= half; dx++) {
+                for (int dz = -half; dz <= half; dz++) {
+                    world.setBlockState(base.add(dx, 0, dz), Blocks.END_STONE_BRICKS.getDefaultState());
+                    boolean wall = Math.abs(dx) == half || Math.abs(dz) == half;
+                    boolean entrance = isTowerEntrance(dx, dz, dir[0], dir[1], half);
+                    if (wall && !entrance) {
+                        for (int y = 1; y <= 8; y++) {
+                            world.setBlockState(base.add(dx, y, dz), Blocks.OBSIDIAN.getDefaultState());
+                        }
+                    }
+                    if (Math.abs(dx) <= 2 && Math.abs(dz) <= 2) {
+                        world.setBlockState(base.add(dx, 9, dz), Blocks.PURPUR_BLOCK.getDefaultState());
+                        world.setBlockState(base.add(dx, 10, dz), Blocks.END_STONE_BRICKS.getDefaultState());
+                    }
+                }
+            }
+            int[][] interior = {{2, 2}, {-2, 2}, {2, -2}, {-2, -2}};
+            for (int[] pillar : interior) {
+                for (int y = 1; y <= 8; y++) {
+                    world.setBlockState(base.add(pillar[0], y, pillar[1]), Blocks.PURPUR_PILLAR.getDefaultState());
+                }
+            }
+            for (int y = 1; y <= 10; y++) {
+                world.setBlockState(base.add(1, y, 1), Blocks.LADDER.getDefaultState());
+            }
+            world.setBlockState(base.add(0, 12, 0), Blocks.END_ROD.getDefaultState());
+            occupied.add(base);
+        }
+    }
+
+    private boolean isTowerEntrance(int dx, int dz, int dirX, int dirZ, int half) {
+        if (dirX != 0) {
+            return dx == -dirX * half && Math.abs(dz) <= 1;
+        }
+        return dz == -dirZ * half && Math.abs(dx) <= 1;
+    }
+
+    private void buildDiagonalArches(ServerWorld world, BlockPos center, int radius, List<BlockPos> occupied) {
+        int archRadius = Math.min(48, Math.max(28, radius - 32));
+        for (int i = 0; i < 4; i++) {
+            double angle = Math.PI / 4.0 + i * Math.PI / 2.0;
+            BlockPos base = center.add((int) Math.round(Math.cos(angle) * archRadius), 2,
+                (int) Math.round(Math.sin(angle) * archRadius));
+            int tangentX = (int) Math.round(-Math.sin(angle));
+            int tangentZ = (int) Math.round(Math.cos(angle));
+            BlockPos left = base.add(tangentX * 4, 0, tangentZ * 4);
+            BlockPos right = base.add(-tangentX * 4, 0, -tangentZ * 4);
+            buildArchPillar(world, left);
+            buildArchPillar(world, right);
+            for (int w = -4; w <= 4; w++) {
+                BlockPos top = base.add(tangentX * w, 7, tangentZ * w);
                 world.setBlockState(top, Blocks.PURPUR_BLOCK.getDefaultState());
             }
-            world.setBlockState(base, Blocks.CRYING_OBSIDIAN.getDefaultState());
+            world.setBlockState(base.add(0, 7, 0), Blocks.CRYING_OBSIDIAN.getDefaultState());
+            world.setBlockState(base.add(0, 8, 0), Blocks.END_ROD.getDefaultState());
+            occupied.add(base);
         }
     }
-    private void buildLowRuins(ServerWorld world, BlockPos center, int radius) {
-        int[][] points = {
-            {16, 34}, {-16, 34}, {16, -34}, {-16, -34},
-            {42, 16}, {-42, 16}, {42, -16}, {-42, -16},
-            {30, 30}, {-30, 30}, {30, -30}, {-30, -30}
-        };
-        for (int i = 0; i < points.length; i++) {
-            BlockPos base = center.add(points[i][0], 2, points[i][1]);
-            boolean alongX = i % 2 == 0;
-            for (int l = -5; l <= 5; l++) {
-                if (Math.abs(l) <= 1) continue;
-                int height = 1 + Math.floorMod(i + l, 3);
-                for (int y = 0; y < height; y++) {
-                    BlockPos pos = alongX ? base.add(l, y, -2) : base.add(-2, y, l);
-                    world.setBlockState(pos, (y == height - 1 ? Blocks.END_STONE_BRICKS : Blocks.OBSIDIAN).getDefaultState());
-                }
-            }
-            world.setBlockState(base.add(0, 0, 0), Blocks.PURPUR_BLOCK.getDefaultState());
-            world.setBlockState(base.add(1, 0, 1), Blocks.CRYING_OBSIDIAN.getDefaultState());
-        }
-    }
-    private void buildCorruptedVeins(ServerWorld world, BlockPos center, int radius) {
-        for (int line = 0; line < 14; line++) {
-            double angle = Math.PI * 2.0 * line / 14.0;
-            int start = 18 + (line % 3) * 4;
-            int end = Math.min(radius - 12, start + 24);
-            for (int d = start; d < end; d += 3) {
-                int x = (int) Math.round(Math.cos(angle) * d + Math.sin(angle) * ((d + line) % 5 - 2));
-                int z = (int) Math.round(Math.sin(angle) * d - Math.cos(angle) * ((d + line) % 5 - 2));
-                BlockPos pos = center.add(x, 2, z);
-                if (x * x + z * z > (radius - 8) * (radius - 8)) continue;
-                world.setBlockState(pos, (d % 2 == 0 ? Blocks.CRYING_OBSIDIAN : Blocks.OBSIDIAN).getDefaultState());
-                if (d % 9 == 0) {
-                    world.setBlockState(pos.up(), Blocks.END_ROD.getDefaultState());
+
+    private void buildArchPillar(ServerWorld world, BlockPos base) {
+        for (int dx = 0; dx <= 1; dx++) {
+            for (int dz = 0; dz <= 1; dz++) {
+                world.setBlockState(base.add(dx, 0, dz), Blocks.END_STONE_BRICKS.getDefaultState());
+                for (int y = 1; y <= 6; y++) {
+                    world.setBlockState(base.add(dx, y, dz), Blocks.OBSIDIAN.getDefaultState());
                 }
             }
         }
     }
-    private void buildMinorAltars(ServerWorld world, BlockPos center, int radius) {
-        int altarRadius = Math.min(radius - 24, 52);
-        for (int i = 0; i < 10; i++) {
-            double angle = Math.PI * 2.0 * i / 10.0 + Math.PI / 10.0;
-            BlockPos base = center.add((int) Math.round(Math.cos(angle) * altarRadius), 2, (int) Math.round(Math.sin(angle) * altarRadius));
-            for (int dx = -2; dx <= 2; dx++) {
-                for (int dz = -2; dz <= 2; dz++) {
-                    if (Math.abs(dx) + Math.abs(dz) > 3) continue;
-                    world.setBlockState(base.add(dx, 0, dz), (Math.abs(dx) + Math.abs(dz) == 3 ? Blocks.OBSIDIAN : Blocks.PURPUR_BLOCK).getDefaultState());
-                }
+
+    private void buildCoverScatter(ServerWorld world, BlockPos center, List<BlockPos> occupied) {
+        for (int i = 0; i < 16; i++) {
+            double angle = Math.toRadians(i * 22.5);
+            int distance = 38 + (i % 4) * 7;
+            BlockPos base = center.add((int) Math.round(Math.cos(angle) * distance), 2,
+                (int) Math.round(Math.sin(angle) * distance));
+            if (isNearOccupied(base, occupied, 8.0)) continue;
+            if (i % 2 == 0) {
+                buildCoverL(world, base, angle);
+            } else {
+                buildCoverLine(world, base, angle);
             }
-            world.setBlockState(base.up(), Blocks.CRYING_OBSIDIAN.getDefaultState());
-            world.setBlockState(base.up(2), Blocks.END_ROD.getDefaultState());
+            occupied.add(base);
         }
     }
+
+    private void buildCoverL(ServerWorld world, BlockPos base, double angle) {
+        int dirX = (int) Math.round(Math.cos(angle));
+        int dirZ = (int) Math.round(Math.sin(angle));
+        int sideX = -dirZ;
+        int sideZ = dirX;
+        if (dirX == 0 && dirZ == 0) dirX = 1;
+        for (int i = 0; i < 4; i++) {
+            BlockPos pos = base.add(dirX * i, 0, dirZ * i);
+            world.setBlockState(pos, Blocks.END_STONE_BRICKS.getDefaultState());
+            if (i <= 1) {
+                world.setBlockState(pos.up(), Blocks.OBSIDIAN.getDefaultState());
+            }
+        }
+        for (int i = 1; i <= 2; i++) {
+            world.setBlockState(base.add(sideX * i, 0, sideZ * i), Blocks.END_STONE_BRICKS.getDefaultState());
+        }
+    }
+
+    private void buildCoverLine(ServerWorld world, BlockPos base, double angle) {
+        int sideX = (int) Math.round(-Math.sin(angle));
+        int sideZ = (int) Math.round(Math.cos(angle));
+        if (sideX == 0 && sideZ == 0) sideZ = 1;
+        for (int i = -2; i <= 1; i++) {
+            BlockPos pos = base.add(sideX * i, 0, sideZ * i);
+            world.setBlockState(pos, Blocks.END_STONE_BRICKS.getDefaultState());
+            if (i == -2 || i == 1) {
+                world.setBlockState(pos.up(), Blocks.PURPUR_SLAB.getDefaultState());
+            }
+        }
+    }
+
+    private boolean isNearOccupied(BlockPos pos, List<BlockPos> occupied, double minDistance) {
+        double minSq = minDistance * minDistance;
+        for (BlockPos other : occupied) {
+            if (pos.getSquaredDistance(other) < minSq) return true;
+        }
+        return false;
+    }
+
+    private void buildEntryRamps(ServerWorld world, BlockPos center, int radius) {
+        int start = Math.max(20, radius - 15);
+        int end = Math.max(start, radius - 10);
+        int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int[] dir : dirs) {
+            for (int distance = start; distance <= end; distance++) {
+                for (int width = -3; width <= 3; width++) {
+                    int x = dir[0] * distance + (dir[1] == 0 ? 0 : width);
+                    int z = dir[1] * distance + (dir[0] == 0 ? 0 : width);
+                    BlockPos pos = center.add(x, 2, z);
+                    if (Math.abs(width) == 3) {
+                        world.setBlockState(pos, Blocks.OBSIDIAN.getDefaultState());
+                        world.setBlockState(pos.up(), Blocks.OBSIDIAN.getDefaultState());
+                    } else {
+                        world.setBlockState(pos, Blocks.END_STONE_BRICKS.getDefaultState());
+                    }
+                }
+            }
+        }
+    }
+
+    private void buildOuterWall(ServerWorld world, BlockPos center, int radius) {
+        int inner = Math.max(20, radius - 10);
+        int outer = radius;
+        for (int dx = -outer; dx <= outer; dx++) {
+            for (int dz = -outer; dz <= outer; dz++) {
+                double distance = Math.sqrt(dx * dx + dz * dz);
+                if (distance < inner || distance > outer) continue;
+                if (isOuterGate(dx, dz, outer, 7)) continue;
+
+                BlockPos base = center.add(dx, 2, dz);
+                world.setBlockState(base, Blocks.END_STONE_BRICKS.getDefaultState());
+                world.setBlockState(base.up(), Blocks.END_STONE_BRICKS.getDefaultState());
+
+                double angle = Math.atan2(dz, dx);
+                int segment = Math.floorMod((int) Math.round(angle * outer), 5);
+                if (segment == 0) {
+                    for (int y = 2; y <= 4; y++) {
+                        world.setBlockState(base.up(y), Blocks.OBSIDIAN.getDefaultState());
+                    }
+                    world.setBlockState(base.up(5), Blocks.CRYING_OBSIDIAN.getDefaultState());
+                    world.setBlockState(base.up(6), Blocks.END_ROD.getDefaultState());
+                } else {
+                    world.setBlockState(base.up(2), Blocks.PURPUR_SLAB.getDefaultState());
+                }
+            }
+        }
+    }
+
+    private boolean isOuterGate(int dx, int dz, int outer, int width) {
+        int half = width / 2;
+        boolean eastWest = Math.abs(Math.abs(dx) - outer) <= 2 && Math.abs(dz) <= half;
+        boolean northSouth = Math.abs(Math.abs(dz) - outer) <= 2 && Math.abs(dx) <= half;
+        return eastWest || northSouth;
+    }
+
     private void buildBarrierWall(ServerWorld world, BlockPos center, int radius) {
         int barrierRadius = radius + 3;
         for (int dx = -barrierRadius; dx <= barrierRadius; dx++) {
             for (int dz = -barrierRadius; dz <= barrierRadius; dz++) {
                 double distance = Math.sqrt(dx * dx + dz * dz);
-                if (distance < barrierRadius - 1 || distance > barrierRadius + 1) continue;
-                for (int y = 1; y <= 12; y++) {
-                    world.setBlockState(center.add(dx, y, dz), Blocks.BARRIER.getDefaultState());
+                if (Math.abs(distance - barrierRadius) > 0.8) continue;
+                for (int dy = 1; dy <= 12; dy++) {
+                    world.setBlockState(center.add(dx, dy, dz), Blocks.BARRIER.getDefaultState());
                 }
             }
         }
     }
+
     void clearArena(ServerWorld world, BlockPos center, int radius) {
-        int r = radius + 10;
-        for (int dx = -r; dx <= r; dx++) {
-            for (int dz = -r; dz <= r; dz++) {
-                if (dx * dx + dz * dz > r * r) continue;
+        int clear = radius + 10;
+        for (int dx = -clear; dx <= clear; dx++) {
+            for (int dz = -clear; dz <= clear; dz++) {
+                if (dx * dx + dz * dz > clear * clear) continue;
                 for (int dy = -10; dy <= 28; dy++) {
                     world.setBlockState(center.add(dx, dy, dz), Blocks.AIR.getDefaultState());
                 }
