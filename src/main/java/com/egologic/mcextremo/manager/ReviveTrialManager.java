@@ -313,7 +313,9 @@ public class ReviveTrialManager {
 
         mod.getDataManager().setTrialState(player.getUuid(), voluntary ? STATE_VOLUNTARY_TRIAL : STATE_TRIAL);
         player.changeGameMode(GameMode.SURVIVAL);
-        player.teleport(world, center.getX() + 0.5, center.getY() + 3.0, center.getZ() + 0.5, config.yaw, config.pitch);
+        BlockPos start = getPlayerStartPos(world, center);
+        float yawToCenter = (float) Math.toDegrees(Math.atan2(center.getZ() - start.getZ(), center.getX() - start.getX())) - 90.0f;
+        player.teleport(world, start.getX() + 0.5, start.getY(), start.getZ() + 0.5, yawToCenter, config.pitch);
         player.setHealth(player.getMaxHealth());
         player.getHungerManager().setFoodLevel(20);
         player.getHungerManager().setSaturationLevel(10.0f);
@@ -474,8 +476,9 @@ public class ReviveTrialManager {
     }
 
     private BlockPos getWaveSpawnPos(BlockPos center, int wave, int index) {
-        int radius = Math.max(10, ModConfig.get().reviveTrial.radioArena - 6);
-        int diagonal = Math.max(8, radius - 4);
+        int arenaRadius = ModConfig.get().reviveTrial.radioArena;
+        int radius = Math.max(14, arenaRadius - 12);
+        int diagonal = Math.max(12, (int) Math.round(radius * 0.72));
         int[][] anchors = {
             {radius, 0}, {-radius, 0}, {0, radius}, {0, -radius},
             {diagonal, diagonal}, {-diagonal, diagonal}, {diagonal, -diagonal}, {-diagonal, -diagonal}
@@ -496,20 +499,61 @@ public class ReviveTrialManager {
             BlockPos base = preferred.add(offset[0], 0, offset[1]);
             for (int y = center.getY() + 6; y >= center.getY() - 2; y--) {
                 BlockPos feet = new BlockPos(base.getX(), y, base.getZ());
-                if (isSpawnSafe(world, feet)) {
+                if (isSpawnSafe(world, feet, center)) {
                     return feet;
                 }
             }
         }
-        return center.add(0, 3, 0);
+        return findFallbackArenaSpawn(world, center);
     }
 
-    private boolean isSpawnSafe(ServerWorld world, BlockPos feet) {
-        return world.getBlockState(feet).isAir()
+    private boolean isSpawnSafe(ServerWorld world, BlockPos feet, BlockPos center) {
+        return isInsideArena(feet, center, ModConfig.get().reviveTrial.radioArena - 6)
+            && world.getBlockState(feet).isAir()
             && world.getBlockState(feet.up()).isAir()
             && !world.getBlockState(feet.down()).isAir()
             && !world.getBlockState(feet.down()).isOf(Blocks.BARRIER)
             && !world.getBlockState(feet.down()).isOf(Blocks.END_ROD);
+    }
+
+    private BlockPos getPlayerStartPos(ServerWorld world, BlockPos center) {
+        int radius = Math.max(10, ModConfig.get().reviveTrial.radioArena / 3);
+        int[][] offsets = {
+            {0, radius}, {radius, 0}, {-radius, 0}, {0, -radius},
+            {radius / 2, radius / 2}, {-radius / 2, radius / 2},
+            {radius / 2, -radius / 2}, {-radius / 2, -radius / 2}
+        };
+        for (int[] offset : offsets) {
+            BlockPos spawn = findSafeSpawnPos(world, center.add(offset[0], 3, offset[1]), center);
+            if (spawn.getSquaredDistance(center) > 6 * 6) {
+                return spawn;
+            }
+        }
+        return findFallbackArenaSpawn(world, center);
+    }
+
+    private BlockPos findFallbackArenaSpawn(ServerWorld world, BlockPos center) {
+        int max = Math.max(8, ModConfig.get().reviveTrial.radioArena - 10);
+        for (int r = 8; r <= max; r += 2) {
+            for (int i = 0; i < 16; i++) {
+                double angle = Math.PI * 2.0 * i / 16.0;
+                BlockPos preferred = center.add((int) Math.round(Math.cos(angle) * r), 3,
+                    (int) Math.round(Math.sin(angle) * r));
+                for (int y = center.getY() + 8; y >= center.getY() + 1; y--) {
+                    BlockPos feet = new BlockPos(preferred.getX(), y, preferred.getZ());
+                    if (isSpawnSafe(world, feet, center)) {
+                        return feet;
+                    }
+                }
+            }
+        }
+        return center.add(0, 9, 10);
+    }
+
+    private boolean isInsideArena(BlockPos pos, BlockPos center, int radius) {
+        double dx = pos.getX() + 0.5 - (center.getX() + 0.5);
+        double dz = pos.getZ() + 0.5 - (center.getZ() + 0.5);
+        return dx * dx + dz * dz <= radius * radius;
     }
 
     private int getWaveSize(int wave) {
@@ -923,7 +967,7 @@ public class ReviveTrialManager {
     }
 
     private void teleportMobToArena(ServerWorld world, Entity entity, BlockPos center) {
-        BlockPos safe = findSafeSpawnPos(world, center.add(0, 2, 0), center);
+        BlockPos safe = getMobReturnPos(world, center);
         entity.refreshPositionAndAngles(safe.getX() + 0.5, safe.getY(), safe.getZ() + 0.5, entity.getYaw(), entity.getPitch());
         entity.setVelocity(0.0, 0.0, 0.0);
         if (entity instanceof ZombieEntity zombie) {
@@ -931,6 +975,20 @@ public class ReviveTrialManager {
                 zombie.setTarget(player);
             }
         }
+    }
+
+    private BlockPos getMobReturnPos(ServerWorld world, BlockPos center) {
+        int radius = Math.max(12, ModConfig.get().reviveTrial.radioArena - 14);
+        for (int i = 0; i < 16; i++) {
+            double angle = Math.PI * 2.0 * i / 16.0;
+            BlockPos preferred = center.add((int) Math.round(Math.cos(angle) * radius), 3,
+                (int) Math.round(Math.sin(angle) * radius));
+            BlockPos safe = findSafeSpawnPos(world, preferred, center);
+            if (safe.getSquaredDistance(center) > 8 * 8) {
+                return safe;
+            }
+        }
+        return findFallbackArenaSpawn(world, center);
     }
 
     private void spawnBossMinions(ServerWorld world, ServerPlayerEntity player, BlockPos center, Set<UUID> mobIds, int count) {

@@ -203,12 +203,24 @@ public class EventTrialManager {
             return;
         }
 
-        int alive = countAliveMobs(world, event);
         if (event.bossDeathTick >= 0) {
             tickBossDeath(server, world, event);
             updateBossBar(server, event, 0, null);
             return;
         }
+        if (event.wave >= ModConfig.get().eventTrial.oleadas && event.bossId != null && isBossDefeated(world, event)) {
+            int consumed = consumeLivingMinions(world, event);
+            if (consumed > 0) {
+                reviveBossFromConsumedMinions(server, world, event, consumed);
+                updateBossBar(server, event, countAliveMobs(world, event), getBoss(world, event));
+                return;
+            }
+            beginBossDeath(world, event);
+            updateBossBar(server, event, 0, null);
+            return;
+        }
+
+        int alive = countAliveMobs(world, event);
         if (alive <= 0) {
             if (event.wave >= ModConfig.get().eventTrial.oleadas) {
                 beginBossDeath(world, event);
@@ -491,6 +503,83 @@ public class EventTrialManager {
         }
         if (event.bossPhaseFour) {
             tickSkullBurst(world, event, boss);
+        }
+    }
+
+    private boolean isBossDefeated(ServerWorld world, EventTrial event) {
+        Entity entity = world.getEntity(event.bossId);
+        return !(entity instanceof ZombieEntity boss) || !boss.isAlive();
+    }
+
+    private int consumeLivingMinions(ServerWorld world, EventTrial event) {
+        int consumed = 0;
+        for (UUID uuid : new HashSet<>(event.mobs)) {
+            if (uuid.equals(event.bossId)) continue;
+            Entity entity = world.getEntity(uuid);
+            if (entity == null || !entity.isAlive()) {
+                event.mobs.remove(uuid);
+                continue;
+            }
+            Vec3d pos = entity.getPos();
+            world.spawnParticles(ParticleTypes.SOUL_FIRE_FLAME, pos.x, pos.y + entity.getHeight() * 0.5, pos.z,
+                24, 0.35, 0.45, 0.35, 0.06);
+            world.spawnParticles(ParticleTypes.REVERSE_PORTAL, pos.x, pos.y + entity.getHeight() * 0.5, pos.z,
+                18, 0.3, 0.4, 0.3, 0.08);
+            entity.discard();
+            event.mobs.remove(uuid);
+            consumed++;
+        }
+        return consumed;
+    }
+
+    private void reviveBossFromConsumedMinions(MinecraftServer server, ServerWorld world, EventTrial event, int consumed) {
+        Entity oldBoss = event.bossId == null ? null : world.getEntity(event.bossId);
+        if (oldBoss != null) {
+            oldBoss.discard();
+        }
+        ZombieEntity boss = EntityType.ZOMBIE.create(world);
+        if (boss == null) {
+            beginBossDeath(world, event);
+            return;
+        }
+
+        BlockPos spawn = findArenaSpawn(world, event.center.add(0, 4, 0), event.center);
+        boss.refreshPositionAndAngles(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5, 0.0f, 0.0f);
+        configureEventBoss(boss, event);
+        world.spawnEntity(boss);
+        double maxHealth = boss.getMaxHealth();
+        float revivedHealth = (float) Math.min(maxHealth * 0.65, maxHealth * 0.20 + consumed * 18.0);
+        boss.setHealth(Math.max(30.0f, revivedHealth));
+        event.bossId = boss.getUuid();
+        event.mobs.add(boss.getUuid());
+        event.bossCooldown = Math.max(event.bossCooldown, 6 * 20);
+        spawnBossPhaseBurst(world, boss);
+        spawnLightning(world, boss.getBlockPos());
+        world.playSound(null, boss.getBlockPos(), SoundEvents.ENTITY_WITHER_SPAWN, SoundCategory.HOSTILE, 1.2f, 0.55f);
+        broadcast(server, "&5El Coloso consume a sus esbirros y se aferra al Velo. &7(" + consumed + " consumido(s))");
+    }
+
+    private void configureEventBoss(ZombieEntity boss, EventTrial event) {
+        boss.addCommandTag(MOB_TAG);
+        boss.setCustomName(Text.literal("\u00A75Coloso del Evento"));
+        boss.setCustomNameVisible(true);
+        boss.setPersistent();
+        boss.equipStack(EquipmentSlot.MAINHAND, enchantedItem(Items.NETHERITE_AXE, Enchantments.SHARPNESS, 3));
+        boss.equipStack(EquipmentSlot.HEAD, enchantedItem(Items.NETHERITE_HELMET, Enchantments.PROTECTION, 3));
+        boss.equipStack(EquipmentSlot.CHEST, enchantedItem(Items.NETHERITE_CHESTPLATE, Enchantments.PROTECTION, 3));
+        boss.equipStack(EquipmentSlot.LEGS, enchantedItem(Items.NETHERITE_LEGGINGS, Enchantments.PROTECTION, 3));
+        boss.equipStack(EquipmentSlot.FEET, enchantedItem(Items.NETHERITE_BOOTS, Enchantments.PROTECTION, 3));
+        setAttr(boss, EntityAttributes.GENERIC_MAX_HEALTH, 260.0 + event.initialPlayers * 65.0);
+        setAttr(boss, EntityAttributes.GENERIC_ATTACK_DAMAGE, 9.0 + event.initialPlayers * 0.75);
+        setAttr(boss, EntityAttributes.GENERIC_ARMOR, 12.0);
+        boss.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, 20 * 60 * 10, 1, false, true));
+        if (event.bossPhaseTwo) {
+            boss.addStatusEffect(new StatusEffectInstance(StatusEffects.STRENGTH, 20 * 60 * 5, 1, false, true));
+            boss.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 20 * 60 * 5, 1, false, true));
+        }
+        if (event.bossPhaseFour) {
+            boss.addStatusEffect(new StatusEffectInstance(StatusEffects.STRENGTH, 20 * 60 * 10, 2, false, true));
+            boss.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 20 * 60 * 10, 1, false, true));
         }
     }
 

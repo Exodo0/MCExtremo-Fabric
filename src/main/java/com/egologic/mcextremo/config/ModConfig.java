@@ -197,7 +197,7 @@ public class ModConfig implements ConfigData {
         public double z = 0.5;
         public float yaw = 0.0f;
         public float pitch = 0.0f;
-        public int radioArena = 30;
+        public int radioArena = 42;
         public int oleadas = 5;
         public int maxIntentos = 2;
         public int distanciaEntreIslas = 512;
@@ -318,7 +318,7 @@ public class ModConfig implements ConfigData {
         config.reviveTrial.trialVoluntarioCooldownMinutos = clamp(config.reviveTrial.trialVoluntarioCooldownMinutos, 1, 1440);
         config.reviveTrial.vidasAlGanarVoluntario = clamp(config.reviveTrial.vidasAlGanarVoluntario, 1, config.vidas.defaultLives);
         config.reviveTrial.vidasAlGanar = clamp(config.reviveTrial.vidasAlGanar, Math.min(2, config.vidas.defaultLives), config.vidas.defaultLives);
-        config.reviveTrial.radioArena = clamp(config.reviveTrial.radioArena, 30, 64);
+        config.reviveTrial.radioArena = clamp(config.reviveTrial.radioArena, 40, 72);
         config.reviveTrial.oleadas = 5;
         config.reviveTrial.maxIntentos = clamp(config.reviveTrial.maxIntentos, 1, 5);
         config.reviveTrial.distanciaEntreIslas = clamp(config.reviveTrial.distanciaEntreIslas, 128, 4096);
