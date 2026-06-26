@@ -17,7 +17,6 @@ import net.minecraft.entity.boss.BossBar;
 import net.minecraft.entity.boss.ServerBossBar;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.entity.decoration.ArmorStandEntity;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.LightningEntity;
 import net.minecraft.entity.mob.EndermanEntity;
@@ -427,9 +426,7 @@ public class ReviveTrialManager {
         ServerWorld world = (ServerWorld) player.getWorld();
         int amount = getWaveSize(wave);
         Set<UUID> mobs = new HashSet<>();
-        UUID bossCameraId = null;
         spawnWaveStartEffects(world, center, wave);
-        boolean bossCameraCreated = false;
         if (wave >= ModConfig.get().reviveTrial.oleadas) {
             giveBossWaveUpgrade(player);
             player.sendMessage(TextUtil.literal("&5Oleada final &7- &dEl Coloso del Vacio ha despertado"), false);
@@ -462,17 +459,11 @@ public class ReviveTrialManager {
                 zombie.setAiDisabled(true);
                 zombie.setVelocity(0.0, -0.25, 0.0);
                 zombie.velocityModified = true;
-                if (!bossCameraCreated) {
-                    ArmorStandEntity camera = spawnBossCamera(world, center);
-                    player.setCameraEntity(camera);
-                    bossCameraId = camera.getUuid();
-                    bossCameraCreated = true;
-                }
                 TrialCinematicNetworking.sendBossIntro(player, zombie.getId(), zombie.getPos().add(0.0, zombie.getHeight() * 0.75, 0.0), BOSS_INTRO_TICKS, "El Coloso del Vacio desciende");
             }
             mobs.add(zombie.getUuid());
         }
-        return new WaveSpawnResult(mobs, bossCameraId);
+        return new WaveSpawnResult(mobs, null);
     }
 
     private BlockPos getWaveSpawnPos(BlockPos center, int wave, int index) {
@@ -767,33 +758,10 @@ public class ReviveTrialManager {
         player.removeStatusEffect(StatusEffects.SLOWNESS);
     }
 
-    private ArmorStandEntity spawnBossCamera(ServerWorld world, BlockPos center) {
-        Vec3d pos = Vec3d.ofCenter(center).add(0.0, 1.5, 0.0);
-        ArmorStandEntity camera = new ArmorStandEntity(world, pos.x, pos.y, pos.z);
-        camera.setInvisible(true);
-        camera.setNoGravity(true);
-        camera.setInvulnerable(true);
-        setArmorStandMarker(camera);
-        camera.setCustomName(Text.literal("mcextremo_boss_camera"));
-        camera.setCustomNameVisible(false);
-        camera.addCommandTag("mcextremo_boss_camera");
-        camera.refreshPositionAndAngles(pos.x, pos.y, pos.z, 0.0f, -70.0f);
-        world.spawnEntity(camera);
-        return camera;
-    }
-
-    private void setArmorStandMarker(ArmorStandEntity armorStand) {
-        NbtCompound nbt = new NbtCompound();
-        armorStand.writeNbt(nbt);
-        nbt.putBoolean("Marker", true);
-        armorStand.readNbt(nbt);
-    }
-
     private void restoreBossCamera(ServerWorld world, ServerPlayerEntity player, Trial trial) {
         if (player.getCameraEntity() != player) {
             player.setCameraEntity(player);
         }
-        discardBossCamera(world, trial);
     }
 
     private void discardBossCamera(ServerWorld world, Trial trial) {
