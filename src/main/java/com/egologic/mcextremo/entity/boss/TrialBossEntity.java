@@ -2,7 +2,6 @@ package com.egologic.mcextremo.entity.boss;
 
 import com.egologic.mcextremo.config.ModConfig;
 import net.minecraft.entity.EntityType;
-import net.minecraft.entity.ai.goal.ZombieAttackGoal;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.data.DataTracker;
 import net.minecraft.entity.data.TrackedData;
@@ -25,12 +24,6 @@ public class TrialBossEntity extends ZombieEntity implements GeoEntity {
 
     public TrialBossEntity(EntityType<? extends ZombieEntity> entityType, World world) {
         super(entityType, world);
-    }
-
-    @Override
-    protected void initGoals() {
-        super.initGoals();
-        this.goalSelector.add(2, new ZombieAttackGoal(this, 1.0, false));
     }
 
     @Override

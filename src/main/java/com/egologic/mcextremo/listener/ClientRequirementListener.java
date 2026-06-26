@@ -58,7 +58,7 @@ public final class ClientRequirementListener {
                         pendingChecks.remove(entry.getKey());
                         continue;
                     } else if (check.clientVersion() == null) {
-                        player.networkHandler.disconnect(versionMismatchMessage(UpdateChecker.currentVersion()));
+                        player.networkHandler.disconnect(versionMismatchMessage(VersionNetworking.currentVersionOrUnknown()));
                     } else if (!isCompatible(player, check.clientVersion())) {
                         // isCompatible already disconnects with the exact reason.
                     }
@@ -82,15 +82,20 @@ public final class ClientRequirementListener {
     }
 
     private static boolean isCompatible(ServerPlayerEntity player, String clientVersion) {
-        String serverVersion = UpdateChecker.currentVersion();
-        int compare = UpdateChecker.compareVersions(clientVersion, serverVersion);
+        String serverVersion = VersionNetworking.currentVersionOrUnknown();
+        String safeClientVersion = clientVersion == null || clientVersion.isBlank() ? VersionNetworking.UNKNOWN_VERSION : clientVersion.trim();
+        if (!VersionNetworking.isKnownVersion(serverVersion) || !VersionNetworking.isKnownVersion(safeClientVersion)) {
+            player.networkHandler.disconnect(versionUnknownMessage(serverVersion, safeClientVersion));
+            return false;
+        }
+        int compare = UpdateChecker.compareVersions(safeClientVersion, serverVersion);
         if (compare == 0) {
             return true;
         }
         if (compare > 0) {
-            player.networkHandler.disconnect(serverOutdatedMessage(serverVersion, clientVersion));
+            player.networkHandler.disconnect(serverOutdatedMessage(serverVersion, safeClientVersion));
         } else {
-            player.networkHandler.disconnect(clientOutdatedMessage(serverVersion, clientVersion));
+            player.networkHandler.disconnect(clientOutdatedMessage(serverVersion, safeClientVersion));
         }
         return false;
     }
@@ -111,5 +116,11 @@ public final class ClientRequirementListener {
         return TextUtil.literal("&cVersion incompatible de MCExtremo.\n"
             + "&7Servidor: &ev" + serverVersion + "\n"
             + "&7Instala exactamente la misma version del mod en cliente y servidor.");
+    }
+
+    private static Text versionUnknownMessage(String serverVersion, String clientVersion) {
+        return TextUtil.literal("&cNo se pudo verificar la version de MCExtremo.\n"
+            + "&7Servidor: &ev" + serverVersion + " &8| &7Tu cliente: &ev" + clientVersion + "\n"
+            + "&7Instala el jar oficial de MCExtremo en cliente y servidor.");
     }
 }

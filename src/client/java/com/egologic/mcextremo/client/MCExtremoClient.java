@@ -5,7 +5,6 @@ import com.egologic.mcextremo.client.render.TrialBossRenderer;
 import com.egologic.mcextremo.client.render.TrialGuardianSpiderRenderer;
 import com.egologic.mcextremo.entity.ModEntities;
 import com.egologic.mcextremo.network.VersionNetworking;
-import com.egologic.mcextremo.util.UpdateChecker;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -57,7 +56,7 @@ public class MCExtremoClient implements ClientModInitializer {
         versionHandshakeTicks--;
         if (!ClientPlayNetworking.canSend(VersionNetworking.CLIENT_VERSION)) return;
         PacketByteBuf buf = PacketByteBufs.create();
-        buf.writeString(UpdateChecker.currentVersion());
+        buf.writeString(VersionNetworking.currentVersionOrUnknown());
         ClientPlayNetworking.send(VersionNetworking.CLIENT_VERSION, buf);
         versionHandshakeSent = true;
     }
