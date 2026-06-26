@@ -14,15 +14,15 @@ public final class TrialCinematicClientNetworking {
                 int entityId = buf.readInt();
                 Vec3d fallbackPos = new Vec3d(buf.readDouble(), buf.readDouble(), buf.readDouble());
                 int durationTicks = buf.readInt();
-                String title = buf.readString();
+                String title = buf.readableBytes() > 0 ? buf.readString() : "El Coloso desciende";
                 client.execute(() -> TrialCinematicController.startBossIntro(entityId, fallbackPos, durationTicks, title));
             });
         ClientPlayNetworking.registerGlobalReceiver(TrialCinematicNetworking.EVENT_INTRO,
             (client, handler, buf, responseSender) -> {
                 Vec3d center = new Vec3d(buf.readDouble(), buf.readDouble(), buf.readDouble());
                 int durationTicks = buf.readInt();
-                String title = buf.readString();
-                String subtitle = buf.readString();
+                String title = buf.readableBytes() > 0 ? buf.readString() : "Entrando al Event Trial";
+                String subtitle = buf.readableBytes() > 0 ? buf.readString() : "La arena te reclama";
                 client.execute(() -> TrialCinematicController.startEventIntro(center, durationTicks, title, subtitle));
             });
         ClientPlayNetworking.registerGlobalReceiver(TrialCinematicNetworking.STOP,

@@ -55,6 +55,8 @@ class EventTrial {
     int skullCooldown;
     int skullBurstDelay;
     int skullsInBurst;
+    int bossDeathTick = -1;
+    UUID dyingBossId;
     boolean regearChestsSpawned;
     Set<BlockPos> regearChests = new HashSet<>();
     Set<UUID> regearChestMarkers = new HashSet<>();

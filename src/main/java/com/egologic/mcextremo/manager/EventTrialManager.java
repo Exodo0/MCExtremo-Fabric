@@ -37,6 +37,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
+import net.minecraft.particle.ParticleEffect;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.potion.PotionUtil;
 import net.minecraft.potion.Potions;
@@ -203,10 +204,18 @@ public class EventTrialManager {
         }
 
         int alive = countAliveMobs(world, event);
+        if (event.bossDeathTick >= 0) {
+            tickBossDeath(server, world, event);
+            updateBossBar(server, event, 0, null);
+            return;
+        }
         if (alive <= 0) {
             if (event.wave >= ModConfig.get().eventTrial.oleadas) {
-                startVictoryDelay(server, event);
+                beginBossDeath(world, event);
             } else {
+                if (event.wave > 0) {
+                    spawnWaveClearEffects(world, event.center);
+                }
                 event.wave++;
                 spawnWave(world, event);
                 event.actionCooldown = WAVE_DELAY_TICKS;
@@ -828,27 +837,92 @@ public class EventTrialManager {
     private void spawnBossAura(ServerWorld world, EventTrial event, ZombieEntity boss) {
         event.auraTicks++;
         if (event.bossPhaseFour) {
-            spawnVeilAura(world, event, boss, 3.0, false);
+            spawnBossSphere(world, boss, 2.0, ParticleTypes.FLAME, 5, 8, event.auraTicks * 0.20);
+            spawnBossSphere(world, boss, 1.1, ParticleTypes.SOUL_FIRE_FLAME, 3, 5, -(event.auraTicks * 0.16));
+            if (world.getTime() % 10L == 0L) {
+                world.spawnParticles(ParticleTypes.ELECTRIC_SPARK,
+                    boss.getX(), boss.getY() + boss.getHeight() * 0.55, boss.getZ(),
+                    20, 1.0, 0.8, 1.0, 0.08);
+            }
+            spawnBossGroundEffect(world, boss);
+            if (world.getTime() % 2L == 0L) {
+                spawnBossDrip(world, boss, 2.0);
+            }
+            if (world.getTime() % 50L == 0L) {
+                world.playSound(null, boss.getBlockPos(), SoundEvents.ENTITY_WITHER_AMBIENT, SoundCategory.HOSTILE, 0.7f, 0.5f);
+            }
+            if (world.getTime() % 120L == 0L) {
+                LightningEntity lightning = EntityType.LIGHTNING_BOLT.create(world);
+                if (lightning != null) {
+                    lightning.setCosmetic(true);
+                    lightning.refreshPositionAfterTeleport(boss.getX(), boss.getY() + boss.getHeight() + 0.5, boss.getZ());
+                    world.spawnEntity(lightning);
+                }
+            }
             return;
         }
-        int particles = event.bossPhaseTwo ? 18 : 10;
-        double radius = event.bossPhaseTwo ? 2.8 : 2.1;
-        for (int i = 0; i < particles; i++) {
-            double angle = (event.auraTicks * 0.18) + Math.PI * 2.0 * i / particles;
-            double x = boss.getX() + Math.cos(angle) * radius;
-            double z = boss.getZ() + Math.sin(angle) * radius;
-            double y = boss.getY() + 0.25 + (i % 4) * 0.45;
-            world.spawnParticles(event.bossPhaseTwo ? ParticleTypes.SOUL_FIRE_FLAME : ParticleTypes.DRAGON_BREATH,
-                x, y, z, 1, 0.04, 0.04, 0.04, 0.01);
+
+        if (event.bossPhaseTwo) {
+            spawnBossSphere(world, boss, 2.4, ParticleTypes.SOUL_FIRE_FLAME, 5, 8, event.auraTicks * 0.14);
+            spawnBossSphere(world, boss, 1.2, ParticleTypes.PORTAL, 3, 5, -(event.auraTicks * 0.10));
+            if (world.getTime() % 3L == 0L) {
+                world.spawnParticles(ParticleTypes.ELECTRIC_SPARK,
+                    boss.getX(), boss.getY() + boss.getHeight() * 0.55, boss.getZ(),
+                    8, 0.8, 0.7, 0.8, 0.05);
+            }
+            spawnBossGroundEffect(world, boss);
+            if (world.getTime() % 2L == 0L) {
+                spawnBossDrip(world, boss, 2.4);
+            }
+            if (world.getTime() % 60L == 0L) {
+                world.playSound(null, boss.getBlockPos(), SoundEvents.ENTITY_WITHER_AMBIENT, SoundCategory.HOSTILE, 0.7f, 0.65f);
+            }
+            return;
         }
-        if (event.bossPhaseTwo && world.getTime() % 6L == 0L) {
-            world.spawnParticles(ParticleTypes.ELECTRIC_SPARK,
-                boss.getX(), boss.getY() + boss.getHeight() * 0.75, boss.getZ(),
-                8, 0.8, 0.6, 0.8, 0.05);
+
+        spawnBossSphere(world, boss, 1.8, ParticleTypes.DRAGON_BREATH, 4, 6, event.auraTicks * 0.08);
+        spawnBossGroundEffect(world, boss);
+        if (world.getTime() % 2L == 0L) {
+            spawnBossDrip(world, boss, 1.8);
         }
         if (world.getTime() % 80L == 0L) {
-            world.playSound(null, boss.getBlockPos(), SoundEvents.ENTITY_WITHER_AMBIENT, SoundCategory.HOSTILE, 0.7f, event.bossPhaseTwo ? 0.65f : 0.85f);
+            world.playSound(null, boss.getBlockPos(), SoundEvents.ENTITY_WITHER_AMBIENT, SoundCategory.HOSTILE, 0.7f, 0.85f);
         }
+    }
+
+    private void spawnBossSphere(ServerWorld world, ZombieEntity boss, double radius, ParticleEffect particle, int bands, int pointsPerBand, double rotationOffset) {
+        int safeBands = Math.max(1, bands);
+        int safePoints = Math.max(1, Math.min(pointsPerBand, 80 / safeBands));
+        double centerY = boss.getY() + boss.getHeight() * 0.55;
+        for (int band = 0; band < safeBands; band++) {
+            double phi = safeBands == 1 ? Math.PI * 0.5 : Math.PI * band / (safeBands - 1);
+            double sin = Math.sin(phi);
+            double cos = Math.cos(phi);
+            for (int point = 0; point < safePoints; point++) {
+                double theta = Math.PI * 2.0 * point / safePoints;
+                double x = boss.getX() + radius * sin * Math.cos(theta + rotationOffset);
+                double y = centerY + radius * cos;
+                double z = boss.getZ() + radius * sin * Math.sin(theta + rotationOffset);
+                world.spawnParticles(particle, x, y, z, 1, 0.04, 0.04, 0.04, 0.01);
+            }
+        }
+    }
+
+    private void spawnBossGroundEffect(ServerWorld world, ZombieEntity boss) {
+        double baseY = boss.getY() + 0.1;
+        for (int i = 0; i < 8; i++) {
+            double angle = Math.PI * 2.0 * i / 8.0;
+            double x = boss.getX() + Math.cos(angle) * 3.0;
+            double z = boss.getZ() + Math.sin(angle) * 3.0;
+            Vec3d velocity = new Vec3d(boss.getX() - x, 0.0, boss.getZ() - z).normalize().multiply(0.06);
+            world.spawnParticles(ParticleTypes.SOUL_FIRE_FLAME, x, baseY, z, 1, velocity.x, 0.0, velocity.z, 0.06);
+        }
+    }
+
+    private void spawnBossDrip(ServerWorld world, ZombieEntity boss, double radius) {
+        double centerY = boss.getY() + boss.getHeight() * 0.55;
+        ParticleEffect particle = activeEvent != null && activeEvent.bossPhaseFour ? ParticleTypes.DRIPPING_LAVA : ParticleTypes.DRIPPING_OBSIDIAN_TEAR;
+        world.spawnParticles(particle, boss.getX(), centerY + radius, boss.getZ(), 5, 0.15, 0.05, 0.15, -0.04);
     }
 
     private void spawnBossPhaseBurst(ServerWorld world, ZombieEntity boss) {
@@ -860,22 +934,71 @@ public class EventTrialManager {
 
     private void spawnVeilAura(ServerWorld world, EventTrial event, ZombieEntity boss, double radius, boolean blocking) {
         event.auraTicks++;
-        int particles = blocking ? 54 : 24;
-        for (int i = 0; i < particles; i++) {
-            double angle = event.auraTicks * 0.22 + Math.PI * 2.0 * i / particles;
-            double pulse = Math.sin((event.auraTicks + i) * 0.18) * 0.25;
-            double r = radius + pulse;
-            double x = boss.getX() + Math.cos(angle) * r;
-            double z = boss.getZ() + Math.sin(angle) * r;
-            double y = boss.getY() + 0.4 + (i % 6) * 0.45;
-            world.spawnParticles(blocking ? ParticleTypes.REVERSE_PORTAL : ParticleTypes.SOUL_FIRE_FLAME,
-                x, y, z, 1, 0.06, 0.06, 0.06, blocking ? 0.045 : 0.02);
-            if (i % 5 == 0) {
-                world.spawnParticles(ParticleTypes.WITCH, x, y + 0.1, z, 1, 0.04, 0.04, 0.04, 0.02);
-            }
+        double pulseRadius = radius + Math.sin(event.auraTicks * 0.10) * 0.5;
+        spawnBossSphere(world, boss, pulseRadius, ParticleTypes.REVERSE_PORTAL, 8, 10, event.auraTicks * 0.06);
+        spawnBossSphere(world, boss, Math.min(2.0, Math.max(1.2, radius * 0.34)), ParticleTypes.SOUL_FIRE_FLAME, 4, 6, event.auraTicks * 0.12);
+        world.spawnParticles(ParticleTypes.SOUL_FIRE_FLAME,
+            boss.getX(), boss.getY() + 0.5, boss.getZ(),
+            12, 1.5, 0.15, 1.5, -0.08);
+        if (world.getTime() % 100L == 0L) {
+            world.playSound(null, boss.getBlockPos(), SoundEvents.ENTITY_ELDER_GUARDIAN_CURSE, SoundCategory.HOSTILE, 0.5f, 0.7f);
         }
         if (blocking) {
             applyBlockingAura(world, event, boss, radius);
+        }
+    }
+
+    private void beginBossDeath(ServerWorld world, EventTrial event) {
+        if (event.bossDeathTick >= 0) return;
+        event.bossDeathTick = 0;
+        event.dyingBossId = event.bossId;
+        ZombieEntity boss = getBoss(world, event);
+        if (boss != null) {
+            boss.setInvulnerable(true);
+            boss.setAiDisabled(true);
+            boss.setVelocity(0.0, 0.0, 0.0);
+            boss.velocityModified = true;
+        }
+    }
+
+    private void tickBossDeath(MinecraftServer server, ServerWorld world, EventTrial event) {
+        Entity entity = event.dyingBossId == null ? null : world.getEntity(event.dyingBossId);
+        Vec3d pos = entity != null ? entity.getPos() : Vec3d.ofCenter(event.center).add(0.0, 2.0, 0.0);
+        int tick = event.bossDeathTick++;
+
+        if (tick == 0) {
+            if (entity instanceof ZombieEntity boss) {
+                boss.setInvulnerable(true);
+                boss.setAiDisabled(true);
+                boss.setVelocity(0.0, 0.0, 0.0);
+                boss.velocityModified = true;
+            }
+            for (int i = 0; i < 3; i++) {
+                world.spawnParticles(ParticleTypes.EXPLOSION,
+                    pos.x + (world.random.nextDouble() - 0.5) * 3.0,
+                    pos.y + 1.0 + world.random.nextDouble(),
+                    pos.z + (world.random.nextDouble() - 0.5) * 3.0,
+                    1, 0.2, 0.2, 0.2, 0.02);
+            }
+            world.spawnParticles(ParticleTypes.DRAGON_BREATH, pos.x, pos.y + 1.0, pos.z, 300, 5.0, 2.0, 5.0, 0.08);
+            world.playSound(null, BlockPos.ofFloored(pos), SoundEvents.ENTITY_ENDER_DRAGON_DEATH, SoundCategory.HOSTILE, 2.0f, 1.0f);
+        }
+
+        if (tick >= 1 && tick <= 40) {
+            double radius = tick * 0.4;
+            for (int i = 0; i < 16; i++) {
+                double angle = Math.PI * 2.0 * i / 16.0;
+                world.spawnParticles(ParticleTypes.SOUL_FIRE_FLAME,
+                    pos.x + Math.cos(angle) * radius, event.center.getY() + 1.2, pos.z + Math.sin(angle) * radius,
+                    1, 0.05, 0.03, 0.05, 0.02);
+            }
+        }
+
+        if (tick >= 40) {
+            if (entity != null) entity.discard();
+            event.bossDeathTick = -1;
+            event.dyingBossId = null;
+            startVictoryDelay(server, event);
         }
     }
 
@@ -1677,8 +1800,35 @@ public class EventTrialManager {
         for (int[] point : points) {
             spawnLightning(world, center.add(point[0], 4, point[1]));
         }
+        spawnLightning(world, center.up(4));
+        world.spawnParticles(ParticleTypes.SONIC_BOOM, center.getX() + 0.5, center.getY() + 4.0, center.getZ() + 0.5, 1, 0.0, 0.0, 0.0, 0.0);
+        for (int i = 0; i < 16; i++) {
+            double angle = Math.PI * 2.0 * i / 16.0;
+            double x = center.getX() + 0.5 + Math.cos(angle) * 8.0;
+            double z = center.getZ() + 0.5 + Math.sin(angle) * 8.0;
+            world.spawnParticles(ParticleTypes.ELECTRIC_SPARK, x, center.getY() + 2.2, z, 2, 0.06, 0.06, 0.06, 0.04);
+        }
         world.spawnParticles(ParticleTypes.DRAGON_BREATH, center.getX() + 0.5, center.getY() + 5.0, center.getZ() + 0.5, 120, 8.0, 1.2, 8.0, 0.04);
         world.playSound(null, center, SoundEvents.ENTITY_WITHER_SPAWN, SoundCategory.HOSTILE, 0.6f, 1.1f);
+        world.playSound(null, center, SoundEvents.ENTITY_ENDER_DRAGON_FLAP, SoundCategory.HOSTILE, 1.0f, 0.8f);
+        sendEventActionbar(world.getServer(), "&5Oleada &d" + wave);
+    }
+
+    private void spawnWaveClearEffects(ServerWorld world, BlockPos center) {
+        world.spawnParticles(ParticleTypes.FIREWORK, center.getX() + 0.5, center.getY() + 3.0, center.getZ() + 0.5, 60, 4.0, 1.8, 4.0, 0.12);
+        world.playSound(null, center, SoundEvents.ENTITY_FIREWORK_ROCKET_BLAST, SoundCategory.HOSTILE, 1.2f, 1.0f);
+        world.playSound(null, center, SoundEvents.ENTITY_PLAYER_LEVELUP, SoundCategory.HOSTILE, 0.8f, 1.2f);
+        sendEventActionbar(world.getServer(), "&aOleada completada");
+    }
+
+    private void sendEventActionbar(MinecraftServer server, String message) {
+        if (activeEvent == null || server == null) return;
+        for (UUID uuid : activeEvent.participants) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
+            if (player != null) {
+                player.sendMessage(TextUtil.literal(message), true);
+            }
+        }
     }
 
     private void spawnAmbientEffects(ServerWorld world, BlockPos center) {

@@ -237,7 +237,10 @@ public class ReviveTrialManager {
             return;
         }
         if (trial.attempt() < ModConfig.get().reviveTrial.maxIntentos) {
+            restoreInventory(player);
             mod.getDataManager().setTrialState(player.getUuid(), STATE_RETRY);
+            player.changeGameMode(GameMode.SURVIVAL);
+            player.sendMessage(TextUtil.literal("&cPrueba interrumpida. &eSe restauro tu inventario; al volver tendras otro intento."), false);
         } else {
             mod.getDataManager().setTrialState(player.getUuid(), STATE_ELIMINATED);
             restoreInventory(player);
