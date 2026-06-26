@@ -1,6 +1,7 @@
 package com.egologic.mcextremo.listener;
 
 import com.egologic.mcextremo.network.SkillTreeNetworking;
+import com.egologic.mcextremo.network.VersionNetworking;
 import com.egologic.mcextremo.util.TextUtil;
 import com.egologic.mcextremo.util.UpdateChecker;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -53,8 +54,11 @@ public final class ClientRequirementListener {
                         player.networkHandler.disconnect(TextUtil.literal(
                             "&cNecesitas instalar MCExtremo en tu cliente para jugar en este servidor."
                         ));
+                    } else if (VersionNetworking.canReceiveCurrentServerVersion(player)) {
+                        pendingChecks.remove(entry.getKey());
+                        continue;
                     } else if (check.clientVersion() == null) {
-                        player.networkHandler.disconnect(clientOutdatedMessage(UpdateChecker.currentVersion(), "desconocida"));
+                        player.networkHandler.disconnect(versionMismatchMessage(UpdateChecker.currentVersion()));
                     } else if (!isCompatible(player, check.clientVersion())) {
                         // isCompatible already disconnects with the exact reason.
                     }
@@ -101,5 +105,11 @@ public final class ClientRequirementListener {
         return TextUtil.literal("&cEl servidor esta desactualizado.\n"
             + "&7Servidor: &ev" + serverVersion + " &8| &7Tu cliente: &ev" + clientVersion + "\n"
             + "&7Pide a un admin actualizar MCExtremo en el servidor.");
+    }
+
+    private static Text versionMismatchMessage(String serverVersion) {
+        return TextUtil.literal("&cVersion incompatible de MCExtremo.\n"
+            + "&7Servidor: &ev" + serverVersion + "\n"
+            + "&7Instala exactamente la misma version del mod en cliente y servidor.");
     }
 }

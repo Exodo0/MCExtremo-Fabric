@@ -25,6 +25,9 @@ public class MCExtremoClient implements ClientModInitializer {
         SkillTreeClientNetworking.register();
         TrialCinematicClientNetworking.register();
         TrialCinematicController.register();
+        ClientPlayNetworking.registerGlobalReceiver(VersionNetworking.VERSION_MATCH,
+            (client, handler, buf, responseSender) -> {
+            });
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             versionHandshakeTicks = VERSION_HANDSHAKE_RETRY_TICKS;
             versionHandshakeSent = false;
