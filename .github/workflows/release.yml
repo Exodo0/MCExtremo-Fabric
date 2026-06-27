@@ -33,3 +33,5 @@ jobs:
         with:
           files: build/libs/*.jar
           generate_release_notes: true
+          draft: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') }}
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') }}
