@@ -10,6 +10,7 @@ import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.boss.BossBar;
 import net.minecraft.entity.boss.ServerBossBar;
+import net.minecraft.entity.EntityType;
 import net.minecraft.entity.mob.ZombieEntity;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -146,6 +147,43 @@ public class ZombieHordeManager {
             "La horda se aproxima", tier.name().replace("\u00A7e", "").replace("\u00A76", "").replace("\u00A7c", "").replace("\u00A75", "").replace("\u00A74", "").replace("\u00A7l", ""));
     }
 
+    public void forceStartHorde(ServerPlayerEntity player, double sizeMultiplier) {
+        if (!config().activado || activeHordes.containsKey(player.getUuid())) return;
+        if (!(player.getWorld() instanceof ServerWorld world)) return;
+        int availableSlots = Math.max(0, config().maxGlobal - countActiveHordeZombies());
+        if (availableSlots <= 0) return;
+        int day = mod.getZombieManager().getDay(world);
+        HordeTier tier = getTier(day);
+        if (tier == null) {
+            tier = new HordeTier("\u00A75Tormenta de Horda", BossBar.Color.PURPLE, 5, 8, 15 * 60, 10);
+        }
+        int desiredCount = (int) Math.ceil(Math.max(5, getHordeSize(day)) * Math.max(1.0, sizeMultiplier));
+        int count = Math.min(availableSlots, Math.max(1, desiredCount));
+        List<ZombieEntity> hordeZombies = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            ZombieEntity zombie = EntityType.ZOMBIE.create(world);
+            if (zombie == null) continue;
+            zombie.refreshPositionAndAngles(player.getX(), player.getY(), player.getZ(), player.getYaw(), 0.0f);
+            world.spawnEntity(zombie);
+            mod.getZombieManager().applyScaling(zombie, Math.max(day, ModConfig.get().zombies.horda.diaInicio));
+            mod.getZombieManager().applyHordeSpeedBoost(zombie);
+            prepareHordeZombie(world, zombie, player, true);
+            hordeZombies.add(zombie);
+        }
+        if (hordeZombies.isEmpty()) return;
+        ServerBossBar bossBar = new ServerBossBar(
+            Text.literal("\u00A74\u2620 " + tier.name() + " \u00A77- \u00A7f" + hordeZombies.size() + " zombies"),
+            tier.color(),
+            BossBar.Style.NOTCHED_10
+        );
+        bossBar.setPercent(1.0f);
+        bossBar.addPlayer(player);
+        HordeEvent event = new HordeEvent(player, bossBar, hordeZombies, hordeZombies.size(), tier.duration() * 20, day);
+        activeHordes.put(player.getUuid(), event);
+        globalZombieCount = countActiveHordeZombies();
+        player.sendMessage(Text.literal("\u00A75Tormenta de Horda: \u00A7duna horda forzada se dirige hacia ti."), true);
+    }
+
     public void tick(ServerWorld world) {
         Iterator<Map.Entry<UUID, Integer>> cdIt = hordeCooldowns.entrySet().iterator();
         while (cdIt.hasNext()) {
@@ -251,6 +289,7 @@ public class ZombieHordeManager {
         event.player.addExperience(exp);
         String tierName = getHordeTierName(event.day);
         mod.getRewardManager().giveHordeRewards(event.player, tierName, event.day);
+        mod.getDailyMissionManager().onHordeComplete(event.player, timeout);
         if (SkillPassiveHandler.hasSkill(event.player, Skill.CAZADOR_T4)) {
             event.player.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, 8 * 20, 0, false, true));
         }

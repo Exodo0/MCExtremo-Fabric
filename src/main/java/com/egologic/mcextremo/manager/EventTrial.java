@@ -23,6 +23,7 @@ class EventTrial {
     EventArenaBuildTask arenaBuild;
     Set<UUID> pendingPlayers = new HashSet<>();
     Set<UUID> participants = new HashSet<>();
+    Set<UUID> disconnectedDuringEvent = new HashSet<>();
     Set<UUID> mobs = new HashSet<>();
     Map<UUID, BlockPos> landingPositions = new HashMap<>();
     Map<UUID, UUID> introAvatars = new HashMap<>();

@@ -187,7 +187,16 @@ public class EventTrialManager {
         }
 
         if (event.phase == EventTrialPhase.INTRO) {
+            EventTrialPhase prevPhase = event.phase;
             cinematicController.tickIntro(server, world, event);
+            if (prevPhase == EventTrialPhase.INTRO && event.phase == EventTrialPhase.PREPARATION) {
+                for (UUID uuid : new HashSet<>(event.participants)) {
+                    ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
+                    if (player == null) continue;
+                    giveEventKit(player);
+                }
+                broadcast(server, "&5Event Trial &7- &eEquipamiento entregado. Preparate para combatir.");
+            }
             return;
         }
 
@@ -287,8 +296,10 @@ public class EventTrialManager {
     }
 
     public void handleDisconnect(ServerPlayerEntity player) {
-        if (activeEvent == null || !activeEvent.participants.remove(player.getUuid())) return;
+        if (activeEvent == null) return;
+        if (!activeEvent.participants.remove(player.getUuid())) return;
         activeEvent.bossBar.removePlayer(player);
+        activeEvent.disconnectedDuringEvent.add(player.getUuid());
         cinematicController.resetIntroPlayerState(player);
         TrialCinematicNetworking.sendStop(player);
         player.sendMessage(Text.empty(), true);
@@ -298,6 +309,23 @@ public class EventTrialManager {
     }
 
     public boolean recoverInterruptedEvent(ServerPlayerEntity player) {
+        if (activeEvent != null && activeEvent.disconnectedDuringEvent.remove(player.getUuid())) {
+            ServerWorld world = getEventWorld(player.getServer());
+            activeEvent.participants.add(player.getUuid());
+            activeEvent.bossBar.addPlayer(player);
+            mod.getDataManager().setTrialState(player.getUuid(), STATE_EVENT_TRIAL);
+            saveAndHideInventory(player);
+            giveEventKit(player);
+            player.changeGameMode(GameMode.SURVIVAL);
+            teleportToArena(player, world, activeEvent.center);
+            cinematicController.resetIntroPlayerState(player);
+            player.setHealth(player.getMaxHealth());
+            player.getHungerManager().setFoodLevel(20);
+            player.getHungerManager().setSaturationLevel(10.0f);
+            player.sendMessage(TextUtil.literal("&eTe reincorporaste al Event Trial. &7Equipamiento otorgado."), false);
+            broadcastToParticipants(player.getServer(), activeEvent, "&e" + player.getName().getString() + " se reincorporo al evento.");
+            return true;
+        }
         if (!STATE_EVENT_TRIAL.equals(mod.getDataManager().getTrialState(player.getUuid()))) {
             return false;
         }
@@ -366,7 +394,6 @@ public class EventTrialManager {
             event.participants.add(player.getUuid());
             event.landingPositions.put(player.getUuid(), landing);
             saveAndHideInventory(player);
-            giveEventKit(player);
             mod.getDataManager().setTrialState(player.getUuid(), STATE_EVENT_TRIAL);
             player.changeGameMode(GameMode.SURVIVAL);
             if (config.introActivada) {
@@ -378,6 +405,7 @@ public class EventTrialManager {
                 TrialCinematicNetworking.sendEventIntro(player, Vec3d.ofCenter(event.center), config.introDuracionTicks,
                     "Entrando al Event Trial", "La arena te reclama");
             } else {
+                giveEventKit(player);
                 cinematicController.teleportToLanding(player, world, landing);
             }
         }
@@ -2100,6 +2128,14 @@ public class EventTrialManager {
         Text text = TextUtil.literal(message);
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             player.sendMessage(text, false);
+        }
+    }
+
+    private void broadcastToParticipants(MinecraftServer server, EventTrial event, String message) {
+        Text text = TextUtil.literal(message);
+        for (UUID uuid : event.participants) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
+            if (player != null) player.sendMessage(text, false);
         }
     }
 }

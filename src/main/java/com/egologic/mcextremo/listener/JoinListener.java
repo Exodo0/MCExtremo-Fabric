@@ -12,6 +12,8 @@ public class JoinListener {
 
             if (!mod.getLivesManager().handleJoin(player)) return;
             mod.getEventTrialManager().recoverInterruptedEvent(player);
+            mod.getDailyMissionManager().onJoin(player);
+            mod.getControlPointManager().onJoin(player);
             mod.getScoreboardManager().forceUpdateScoreboard(player);
             mod.getUpdateChecker().notifyIfUpdateAvailable(player);
         });

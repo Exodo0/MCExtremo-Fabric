@@ -24,6 +24,9 @@ public class ModConfig implements ConfigData {
     public ReviveTrial reviveTrial = new ReviveTrial();
     public EventTrial eventTrial = new EventTrial();
     public Visuals visuals = new Visuals();
+    public MisionesDiarias misionesDiarias = new MisionesDiarias();
+    public EventosMundo eventosMundo = new EventosMundo();
+    public PuntosControl puntosControl = new PuntosControl();
 
     public static class Vidas {
         public int defaultLives = 3;
@@ -246,6 +249,41 @@ public class ModConfig implements ConfigData {
         public int maxVisualParticlesPerTick = 80;
     }
 
+    public static class MisionesDiarias {
+        public boolean activado = true;
+        public int misionesPorDia = 3;
+        public boolean resetAlCambioDia = true;
+    }
+
+    public static class EventosMundo {
+        public boolean activado = true;
+        public int cooldownEntreEventosMinutos = 90;
+        public int checkCadaMinutos = 20;
+        public float probabilidadEvento = 0.35f;
+        public boolean eclipseActivado = true;
+        public boolean tormentaActivado = true;
+        public boolean horaCazaActivado = true;
+        public boolean lunaCorruptaActivado = true;
+    }
+
+    public static class PuntosControl {
+        public boolean activado = true;
+        public int radioCaptura = 8;
+        public int ticksParaCapturar = 600;
+        public int minutosBuffRenovacion = 5;
+        public boolean soloCapturaEnPvP = true;
+        public boolean pausarCapturaConEnemigos = true;
+        public int radioEnemigosCaptura = 20;
+        public boolean eventosDefensa = true;
+        public int minutosEntreEventosDefensa = 30;
+        public int duracionEventoDefensaSegundos = 180;
+        public int mobsEventoDefensaBase = 8;
+        public String norte = "Norte";
+        public String sur = "Sur";
+        public String este = "Este";
+        public String oeste = "Oeste";
+    }
+
     private static ModConfig instance;
 
     public static void register() {
@@ -380,6 +418,17 @@ public class ModConfig implements ConfigData {
         config.visuals.phaseTransitionDurationTicks = clamp(config.visuals.phaseTransitionDurationTicks, 20, 160);
         config.visuals.bossDeathDurationTicks = clamp(config.visuals.bossDeathDurationTicks, 20, 160);
         config.visuals.maxVisualParticlesPerTick = clamp(config.visuals.maxVisualParticlesPerTick, 10, 200);
+        config.misionesDiarias.misionesPorDia = clamp(config.misionesDiarias.misionesPorDia, 1, 5);
+        config.eventosMundo.cooldownEntreEventosMinutos = clamp(config.eventosMundo.cooldownEntreEventosMinutos, 5, 360);
+        config.eventosMundo.checkCadaMinutos = clamp(config.eventosMundo.checkCadaMinutos, 1, 120);
+        config.eventosMundo.probabilidadEvento = (float) clampDouble(config.eventosMundo.probabilidadEvento, 0.0, 1.0);
+        config.puntosControl.radioCaptura = clamp(config.puntosControl.radioCaptura, 3, 24);
+        config.puntosControl.ticksParaCapturar = clamp(config.puntosControl.ticksParaCapturar, 60, 20 * 120);
+        config.puntosControl.minutosBuffRenovacion = clamp(config.puntosControl.minutosBuffRenovacion, 1, 30);
+        config.puntosControl.radioEnemigosCaptura = clamp(config.puntosControl.radioEnemigosCaptura, 8, 48);
+        config.puntosControl.minutosEntreEventosDefensa = clamp(config.puntosControl.minutosEntreEventosDefensa, 5, 180);
+        config.puntosControl.duracionEventoDefensaSegundos = clamp(config.puntosControl.duracionEventoDefensaSegundos, 60, 600);
+        config.puntosControl.mobsEventoDefensaBase = clamp(config.puntosControl.mobsEventoDefensaBase, 3, 40);
     }
 
     private static int clamp(int value, int min, int max) {

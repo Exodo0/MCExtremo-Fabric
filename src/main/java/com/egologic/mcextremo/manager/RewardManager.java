@@ -56,6 +56,7 @@ public class RewardManager {
         }
         if (materials > 0) {
             giveOrDrop(player, createMaterial(materials));
+            mod.getDailyMissionManager().onFragmentsEarned(player, materials);
         }
 
         double heartChance = getHeartChance(day, config);
@@ -88,6 +89,22 @@ public class RewardManager {
 
         player.sendMessage(TextUtil.literal("&6Recompensa de evento: &e" + materials
             + " fragmentos, corazones y suministros raros."), false);
+    }
+
+    public void giveFragments(ServerPlayerEntity player, int amount) {
+        if (amount <= 0) return;
+        giveOrDrop(player, createMaterial(amount));
+        mod.getDailyMissionManager().onFragmentsEarned(player, amount);
+    }
+
+    public void giveHeart(ServerPlayerEntity player, int amount) {
+        if (amount <= 0 || !ModConfig.get().corazones.activado) return;
+        giveOrDrop(player, createHeart(amount));
+    }
+
+    public void giveXpBottles(ServerPlayerEntity player, int amount) {
+        if (amount <= 0) return;
+        giveOrDrop(player, new ItemStack(Items.EXPERIENCE_BOTTLE, amount));
     }
 
     public ItemStack createHeart(int count) {

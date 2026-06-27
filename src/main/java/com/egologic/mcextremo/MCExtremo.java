@@ -43,6 +43,9 @@ public class MCExtremo implements ModInitializer {
     private ArmorUpgradeManager armorUpgradeManager;
     private ReviveTrialManager reviveTrialManager;
     private EventTrialManager eventTrialManager;
+    private DailyMissionManager dailyMissionManager;
+    private WorldEventManager worldEventManager;
+    private ControlPointManager controlPointManager;
     private UpdateChecker updateChecker;
 
     @Override
@@ -65,6 +68,9 @@ public class MCExtremo implements ModInitializer {
         armorUpgradeManager = new ArmorUpgradeManager(this);
         reviveTrialManager = new ReviveTrialManager(this);
         eventTrialManager = new EventTrialManager(this);
+        dailyMissionManager = new DailyMissionManager(this);
+        worldEventManager = new WorldEventManager(this);
+        controlPointManager = new ControlPointManager(this);
         updateChecker = new UpdateChecker();
 
         if (ModConfig.get().skillTree.activado) {
@@ -105,6 +111,9 @@ public class MCExtremo implements ModInitializer {
             pvpScheduler.tick(server);
             scoreboardManager.tick(server);
             zombieHordeManager.tick(server.getOverworld());
+            dailyMissionManager.tick(server);
+            worldEventManager.tick(server);
+            controlPointManager.tick(server);
         });
 
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
@@ -118,6 +127,7 @@ public class MCExtremo implements ModInitializer {
 
         registerPvpCancellation();
         SkillPassiveHandler.register();
+        dailyMissionManager.registerEvents();
         SkillTreeNetworking.registerServer();
         VersionNetworking.registerServer();
 
@@ -170,5 +180,8 @@ public class MCExtremo implements ModInitializer {
     public ArmorUpgradeManager getArmorUpgradeManager() { return armorUpgradeManager; }
     public ReviveTrialManager getReviveTrialManager() { return reviveTrialManager; }
     public EventTrialManager getEventTrialManager() { return eventTrialManager; }
+    public DailyMissionManager getDailyMissionManager() { return dailyMissionManager; }
+    public WorldEventManager getWorldEventManager() { return worldEventManager; }
+    public ControlPointManager getControlPointManager() { return controlPointManager; }
     public UpdateChecker getUpdateChecker() { return updateChecker; }
 }

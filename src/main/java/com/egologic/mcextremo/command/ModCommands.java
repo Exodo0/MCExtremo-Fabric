@@ -6,16 +6,20 @@ import com.egologic.mcextremo.MCExtremo;
 import com.egologic.mcextremo.config.ModConfig;
 import com.egologic.mcextremo.util.DifficultyPhase;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.mob.ZombieEntity;
+import net.minecraft.command.CommandSource;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.Box;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,6 +28,28 @@ import static net.minecraft.server.command.CommandManager.argument;
 import static net.minecraft.server.command.CommandManager.literal;
 
 public class ModCommands {
+    private static final SuggestionProvider<ServerCommandSource> PLAYER_SUGGESTIONS = (ctx, builder) -> {
+        List<String> names = new ArrayList<>();
+        for (ServerPlayerEntity player : ctx.getSource().getServer().getPlayerManager().getPlayerList()) {
+            names.add(player.getGameProfile().getName());
+        }
+        return CommandSource.suggestMatching(names.stream().distinct().sorted().toList(), builder);
+    };
+
+    private static final SuggestionProvider<ServerCommandSource> CONTROL_POINT_SUGGESTIONS = (ctx, builder) -> {
+        List<String> ids = new ArrayList<>(MCExtremo.getInstance().getDataManager().getControlPoints().keySet());
+        if (ids.isEmpty()) ids.addAll(List.of("norte", "sur", "este", "oeste"));
+        return CommandSource.suggestMatching(ids.stream().distinct().sorted().toList(), builder);
+    };
+
+    private static final SuggestionProvider<ServerCommandSource> WORLD_EVENT_SUGGESTIONS = (ctx, builder) ->
+        CommandSource.suggestMatching(List.of("ECLIPSE_SANGRIENTO", "TORMENTA_DE_HORDA", "HORA_DE_CAZA", "LUNA_CORRUPTA"), builder);
+
+    private static final SuggestionProvider<ServerCommandSource> PVP_STATE_SUGGESTIONS = (ctx, builder) ->
+        CommandSource.suggestMatching(List.of("on", "off"), builder);
+
+    private static final SuggestionProvider<ServerCommandSource> CONFIG_PATH_SUGGESTIONS = (ctx, builder) ->
+        CommandSource.suggestMatching(ModConfig.getAllConfig().keySet(), builder);
 
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
@@ -36,12 +62,14 @@ public class ModCommands {
             .then(literal("lives")
                 .executes(ctx -> comandoVidas(ctx.getSource()))
                 .then(argument("player", StringArgumentType.word())
+                    .suggests(PLAYER_SUGGESTIONS)
                     .executes(ctx -> comandoVidasJugador(ctx.getSource(), StringArgumentType.getString(ctx, "player")))
                 )
             )
             .then(literal("setlives")
                 .requires(s -> s.hasPermissionLevel(2))
                 .then(argument("player", StringArgumentType.word())
+                    .suggests(PLAYER_SUGGESTIONS)
                     .then(argument("amount", IntegerArgumentType.integer(0))
                         .executes(ctx -> comandoSetVidas(ctx.getSource(),
                             StringArgumentType.getString(ctx, "player"),
@@ -52,6 +80,7 @@ public class ModCommands {
             .then(literal("addlives")
                 .requires(s -> s.hasPermissionLevel(2))
                 .then(argument("player", StringArgumentType.word())
+                    .suggests(PLAYER_SUGGESTIONS)
                     .then(argument("amount", IntegerArgumentType.integer(1))
                         .executes(ctx -> comandoAddVidas(ctx.getSource(),
                             StringArgumentType.getString(ctx, "player"),
@@ -62,6 +91,7 @@ public class ModCommands {
             .then(literal("revive")
                 .requires(s -> s.hasPermissionLevel(2))
                 .then(argument("player", StringArgumentType.word())
+                    .suggests(PLAYER_SUGGESTIONS)
                     .executes(ctx -> comandoRevivir(ctx.getSource(), StringArgumentType.getString(ctx, "player")))
                 )
             )
@@ -69,6 +99,7 @@ public class ModCommands {
                 .executes(ctx -> comandoEstado(ctx.getSource()))
                 .then(argument("player", StringArgumentType.word())
                     .requires(s -> s.hasPermissionLevel(2))
+                    .suggests(PLAYER_SUGGESTIONS)
                     .executes(ctx -> comandoEstadoJugador(ctx.getSource(), StringArgumentType.getString(ctx, "player")))
                 )
             )
@@ -79,11 +110,15 @@ public class ModCommands {
             .then(literal("upgrade")
                 .executes(ctx -> comandoMejorar(ctx.getSource()))
             )
+            .then(literal("misiones")
+                .executes(ctx -> comandoMisiones(ctx.getSource()))
+            )
             .then(literal("trial")
                 .executes(ctx -> comandoTrialVoluntario(ctx.getSource()))
                 .then(literal("start")
                     .requires(s -> s.hasPermissionLevel(2))
                     .then(argument("player", StringArgumentType.word())
+                        .suggests(PLAYER_SUGGESTIONS)
                         .executes(ctx -> comandoTrialIniciar(ctx.getSource(), StringArgumentType.getString(ctx, "player")))
                     )
                 )
@@ -100,10 +135,49 @@ public class ModCommands {
                     .executes(ctx -> comandoEventStatus(ctx.getSource()))
                 )
             )
+            .then(literal("evento")
+                .requires(s -> s.hasPermissionLevel(2))
+                .then(literal("start")
+                    .then(argument("tipo", StringArgumentType.word())
+                        .suggests(WORLD_EVENT_SUGGESTIONS)
+                        .executes(ctx -> comandoWorldEventStart(ctx.getSource(), StringArgumentType.getString(ctx, "tipo")))
+                    )
+                )
+                .then(literal("stop")
+                    .executes(ctx -> comandoWorldEventStop(ctx.getSource()))
+                )
+                .then(literal("status")
+                    .executes(ctx -> comandoWorldEventStatus(ctx.getSource()))
+                )
+            )
+            .then(literal("puntos")
+                .then(literal("info")
+                    .executes(ctx -> comandoPuntosInfo(ctx.getSource()))
+                )
+                .then(literal("generar")
+                    .requires(s -> s.hasPermissionLevel(2))
+                    .executes(ctx -> comandoPuntosGenerar(ctx.getSource()))
+                )
+                .then(literal("defensa")
+                    .requires(s -> s.hasPermissionLevel(2))
+                    .then(argument("id", StringArgumentType.word())
+                        .suggests(CONTROL_POINT_SUGGESTIONS)
+                        .executes(ctx -> comandoPuntosDefensa(ctx.getSource(), StringArgumentType.getString(ctx, "id")))
+                    )
+                )
+                .then(literal("renovar")
+                    .requires(s -> s.hasPermissionLevel(2))
+                    .then(argument("id", StringArgumentType.word())
+                        .suggests(CONTROL_POINT_SUGGESTIONS)
+                        .executes(ctx -> comandoPuntosRenovar(ctx.getSource(), StringArgumentType.getString(ctx, "id")))
+                    )
+                )
+            )
             .then(literal("hearts")
                 .executes(ctx -> comandoCorazones(ctx.getSource(), null))
                 .then(argument("player", StringArgumentType.word())
                     .requires(s -> s.hasPermissionLevel(2))
+                    .suggests(PLAYER_SUGGESTIONS)
                     .executes(ctx -> comandoCorazones(ctx.getSource(), StringArgumentType.getString(ctx, "player")))
                 )
             )
@@ -130,6 +204,7 @@ public class ModCommands {
                 .then(literal("reset")
                     .requires(s -> s.hasPermissionLevel(2))
                     .then(argument("player", StringArgumentType.word())
+                        .suggests(PLAYER_SUGGESTIONS)
                         .executes(ctx -> comandoSkillsReset(ctx.getSource(), StringArgumentType.getString(ctx, "player")))
                     )
                 )
@@ -165,11 +240,13 @@ public class ModCommands {
                 .then(literal("list").executes(ctx -> comandoConfig(ctx.getSource(), "list", "")))
                 .then(literal("get")
                     .then(argument("path", StringArgumentType.greedyString())
+                        .suggests(CONFIG_PATH_SUGGESTIONS)
                         .executes(ctx -> comandoConfig(ctx.getSource(), "get", StringArgumentType.getString(ctx, "path")))
                     )
                 )
                 .then(literal("set")
                     .then(argument("path", StringArgumentType.word())
+                        .suggests(CONFIG_PATH_SUGGESTIONS)
                         .then(argument("value", StringArgumentType.greedyString())
                             .executes(ctx -> comandoConfigSet(ctx.getSource(), StringArgumentType.getString(ctx, "path"), StringArgumentType.getString(ctx, "value")))
                         )
@@ -181,6 +258,7 @@ public class ModCommands {
             .then(literal("pvp")
                 .requires(s -> s.hasPermissionLevel(2))
                 .then(argument("state", StringArgumentType.word())
+                    .suggests(PVP_STATE_SUGGESTIONS)
                     .executes(ctx -> comandoPvp(ctx.getSource(), StringArgumentType.getString(ctx, "state")))
                 )
             );
@@ -241,6 +319,80 @@ public class ModCommands {
             source.sendFeedback(() -> Text.literal("\u00A7cUsa: /mce pvp <on|off>"), false);
         }
         return 1;
+    }
+
+    private static int comandoMisiones(ServerCommandSource source) {
+        if (!(source.getEntity() instanceof ServerPlayerEntity player)) {
+            source.sendFeedback(() -> Text.literal("\u00A7cSolo jugadores pueden ver misiones."), false);
+            return 0;
+        }
+        MCExtremo.getInstance().getDailyMissionManager().showMissions(player);
+        return 1;
+    }
+
+    private static int comandoWorldEventStart(ServerCommandSource source, String tipo) {
+        boolean started = MCExtremo.getInstance().getWorldEventManager().forceStart(source.getServer(), tipo);
+        if (started) {
+            source.sendFeedback(() -> Text.literal("\u00A7aEvento mundial programado: " + tipo), true);
+            return 1;
+        }
+        source.sendFeedback(() -> Text.literal("\u00A7cNo se pudo iniciar. Tipos: ECLIPSE_SANGRIENTO, TORMENTA_DE_HORDA, HORA_DE_CAZA, LUNA_CORRUPTA"), false);
+        return 0;
+    }
+
+    private static int comandoWorldEventStop(ServerCommandSource source) {
+        MCExtremo.getInstance().getWorldEventManager().stop(source.getServer());
+        source.sendFeedback(() -> Text.literal("\u00A7aEvento mundial detenido."), true);
+        return 1;
+    }
+
+    private static int comandoWorldEventStatus(ServerCommandSource source) {
+        String status = MCExtremo.getInstance().getWorldEventManager().status();
+        source.sendFeedback(() -> Text.literal("\u00A7eEvento mundial: \u00A7f" + status), false);
+        return 1;
+    }
+
+    private static int comandoPuntosGenerar(ServerCommandSource source) {
+        if (!(source.getEntity() instanceof ServerPlayerEntity player)) {
+            source.sendFeedback(() -> Text.literal("\u00A7cSolo puedes generar puntos desde una posicion de jugador."), false);
+            return 0;
+        }
+        if (player.getWorld() != source.getServer().getOverworld()) {
+            source.sendFeedback(() -> Text.literal("\u00A7cLos puntos de control solo pueden generarse en el Overworld."), false);
+            return 0;
+        }
+        MCExtremo.getInstance().getControlPointManager().generate(source.getServer().getOverworld(), player.getBlockPos());
+        source.sendFeedback(() -> Text.literal("\u00A7aPuntos de control generados alrededor de tu posicion."), true);
+        return 1;
+    }
+
+    private static int comandoPuntosInfo(ServerCommandSource source) {
+        if (!(source.getEntity() instanceof ServerPlayerEntity player)) {
+            source.sendFeedback(() -> Text.literal("\u00A7cSolo jugadores pueden ver puntos."), false);
+            return 0;
+        }
+        MCExtremo.getInstance().getControlPointManager().showInfo(player);
+        return 1;
+    }
+
+    private static int comandoPuntosDefensa(ServerCommandSource source, String id) {
+        boolean started = MCExtremo.getInstance().getControlPointManager().forceDefense(source.getServer(), id);
+        if (started) {
+            source.sendFeedback(() -> Text.literal("\u00A7aDefensa forzada para el punto " + id + "."), true);
+            return 1;
+        }
+        source.sendFeedback(() -> Text.literal("\u00A7cNo se pudo iniciar defensa. Revisa que exista, tenga dueno online y no tenga otra defensa activa."), false);
+        return 0;
+    }
+
+    private static int comandoPuntosRenovar(ServerCommandSource source, String id) {
+        boolean started = MCExtremo.getInstance().getControlPointManager().rebuildOutpost(source.getServer().getOverworld(), id);
+        if (started) {
+            source.sendFeedback(() -> Text.literal("\u00A7aRenovacion iniciada para el punto " + id + "."), true);
+            return 1;
+        }
+        source.sendFeedback(() -> Text.literal("\u00A7cNo se pudo renovar. El punto no existe o todavia no tiene dueno."), false);
+        return 0;
     }
 
     private static int comandoRevivir(ServerCommandSource source, String nombre) {

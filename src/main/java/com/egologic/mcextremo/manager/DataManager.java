@@ -34,6 +34,10 @@ public class DataManager {
     private Map<UUID, String> trialStates = new HashMap<>();
     private Map<UUID, List<String>> trialInventories = new HashMap<>();
     private Map<UUID, Long> voluntaryTrialCooldowns = new HashMap<>();
+    private Map<UUID, DailyMissionState> dailyMissions = new HashMap<>();
+    private WorldEventSave worldEvent = new WorldEventSave();
+    private Map<String, ControlPointState> controlPoints = new HashMap<>();
+    private Map<String, ControlPointCaptureState> controlPointCapture = new HashMap<>();
     private boolean hardcoreConfigured = false;
     private int realDay = 0;
     private int lastObservedWorldDay = -1;
@@ -128,6 +132,25 @@ public class DataManager {
                 if (raw.get("hardcoreConfigured") instanceof Boolean configured) {
                     hardcoreConfigured = configured;
                 }
+                if (raw.get("dailyMissions") != null) {
+                    Type dailyType = new TypeToken<Map<UUID, DailyMissionState>>(){}.getType();
+                    Map<UUID, DailyMissionState> loaded = gson.fromJson(gson.toJson(raw.get("dailyMissions")), dailyType);
+                    if (loaded != null) dailyMissions = loaded;
+                }
+                if (raw.get("worldEvent") != null) {
+                    WorldEventSave loaded = gson.fromJson(gson.toJson(raw.get("worldEvent")), WorldEventSave.class);
+                    if (loaded != null) worldEvent = loaded;
+                }
+                if (raw.get("controlPoints") != null) {
+                    Type cpType = new TypeToken<Map<String, ControlPointState>>(){}.getType();
+                    Map<String, ControlPointState> loaded = gson.fromJson(gson.toJson(raw.get("controlPoints")), cpType);
+                    if (loaded != null) controlPoints = loaded;
+                }
+                if (raw.get("controlPointCapture") != null) {
+                    Type captureType = new TypeToken<Map<String, ControlPointCaptureState>>(){}.getType();
+                    Map<String, ControlPointCaptureState> loaded = gson.fromJson(gson.toJson(raw.get("controlPointCapture")), captureType);
+                    if (loaded != null) controlPointCapture = loaded;
+                }
                 if (raw.get("realDay") instanceof Number day) {
                     realDay = Math.max(0, day.intValue());
                 }
@@ -171,6 +194,10 @@ public class DataManager {
             data.put("voluntaryTrialCooldowns", cooldownsStr);
             data.put("hardcoreConfigured", hardcoreConfigured);
             data.put("realDay", realDay);
+            data.put("dailyMissions", dailyMissions);
+            data.put("worldEvent", worldEvent);
+            data.put("controlPoints", controlPoints);
+            data.put("controlPointCapture", controlPointCapture);
 
             Path tmpFile = dataFile.resolveSibling(dataFile.getFileName() + ".tmp");
             Files.writeString(tmpFile, gson.toJson(data));
@@ -305,6 +332,121 @@ public class DataManager {
 
     public void setLastObservedWorldDay(int day) {
         this.lastObservedWorldDay = day;
+    }
+
+    public DailyMissionState getDailyMissionState(UUID uuid) {
+        return dailyMissions.get(uuid);
+    }
+
+    public void setDailyMissionState(UUID uuid, DailyMissionState state) {
+        dailyMissions.put(uuid, state);
+        save();
+    }
+
+    public Map<UUID, DailyMissionState> getDailyMissions() {
+        return dailyMissions;
+    }
+
+    public WorldEventSave getWorldEvent() {
+        return worldEvent;
+    }
+
+    public void setWorldEvent(WorldEventSave worldEvent) {
+        this.worldEvent = worldEvent == null ? new WorldEventSave() : worldEvent;
+        save();
+    }
+
+    public Map<String, ControlPointState> getControlPoints() {
+        return controlPoints;
+    }
+
+    public void setControlPoint(String id, ControlPointState state) {
+        controlPoints.put(id, state);
+        save();
+    }
+
+    public Map<String, ControlPointCaptureState> getControlPointCapture() {
+        return controlPointCapture;
+    }
+
+    public void setControlPointCapture(String id, ControlPointCaptureState state) {
+        if (state == null) {
+            if (controlPointCapture.remove(id) == null) return;
+        } else {
+            ControlPointCaptureState current = controlPointCapture.get(id);
+            if (current != null
+                && current.progress == state.progress
+                && String.valueOf(current.capturingPlayer).equals(String.valueOf(state.capturingPlayer))) {
+                return;
+            }
+            controlPointCapture.put(id, state);
+        }
+        save();
+    }
+
+    public static class DailyMissionState {
+        public int day;
+        public List<String> missions = new ArrayList<>();
+        public Map<String, Integer> progress = new HashMap<>();
+        public List<String> completed = new ArrayList<>();
+    }
+
+    public static class WorldEventSave {
+        public String currentEvent;
+        public String state = "IDLE";
+        public long startTime;
+        public long endTime;
+        public int ticksRemaining;
+    }
+
+    public static class ControlPointState {
+        public String owner;
+        public int x;
+        public int y;
+        public int z;
+        public boolean outpostBuilt;
+        public long nextDefenseEventAt;
+
+        public ControlPointState() {
+        }
+
+        public ControlPointState(UUID owner, int x, int y, int z) {
+            this.owner = owner == null ? null : owner.toString();
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+
+        public UUID ownerUuid() {
+            if (owner == null || owner.isBlank()) return null;
+            try {
+                return UUID.fromString(owner);
+            } catch (IllegalArgumentException ignored) {
+                return null;
+            }
+        }
+    }
+
+    public static class ControlPointCaptureState {
+        public String capturingPlayer;
+        public int progress;
+
+        public ControlPointCaptureState() {
+        }
+
+        public ControlPointCaptureState(UUID capturingPlayer, int progress) {
+            this.capturingPlayer = capturingPlayer == null ? null : capturingPlayer.toString();
+            this.progress = progress;
+        }
+
+        public UUID capturingUuid() {
+            if (capturingPlayer == null || capturingPlayer.isBlank()) return null;
+            try {
+                return UUID.fromString(capturingPlayer);
+            } catch (IllegalArgumentException ignored) {
+                return null;
+            }
+        }
     }
 
     private String serializeStack(ItemStack stack) throws Exception {

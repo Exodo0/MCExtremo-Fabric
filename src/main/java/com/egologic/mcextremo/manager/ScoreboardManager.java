@@ -152,6 +152,18 @@ public class ScoreboardManager {
         scores.add(2);
         count++;
 
+        if (mod.getWorldEventManager() != null) {
+            lines.add(translateColors("\u00A77\u25B8 \u00A75\u2726 \u00A7fEvento: " + mod.getWorldEventManager().scoreboardStatus()));
+            scores.add(2);
+            count++;
+        }
+
+        if (mod.getControlPointManager() != null) {
+            lines.add(translateColors("\u00A77\u25B8 \u00A76\u2691 \u00A7fPuntos: " + mod.getControlPointManager().scoreboardLine(player)));
+            scores.add(2);
+            count++;
+        }
+
         lines.add(translateColors("\u00A77\u25B8 \u00A74\u2620 \u00A7fModo: " + estadoHardcore));
         scores.add(1);
         count++;
